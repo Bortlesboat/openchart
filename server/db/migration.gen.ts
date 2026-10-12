@@ -545,4 +545,10 @@ export const migrations = [
     checksum:
       "dedfc1917ae29eb630f8d2caa0b6505a7e8d8ad1f39ceadea76d7ea9778b26a6",
   },
+  {
+    ...(await import("./migration/20261011201050_custom-widget")).default,
+    filename: "20261011201050_custom-widget.ts",
+    checksum:
+      "d5428c8e5e80fdbbe30710110fcc085a6ab1600b34d04a6dc2d9a40f12921f7c",
+  },
 ] satisfies DatabaseMigration.RegisteredMigration[];

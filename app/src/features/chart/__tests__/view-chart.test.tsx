@@ -99,7 +99,13 @@ function setup({ focused }: { focused?: number } = {}) {
         value={{ bars: { getCapabilities } } as unknown as FeedClient}
       >
         <ChartSelectionContext.Provider
-          value={{ activeChartId: chart.id, focusedCells, focus: vi.fn() }}
+          value={{
+            activeChartId: chart.id,
+            focusedCells,
+            focus: vi.fn(),
+            activeWidgetId: undefined,
+            focusWidget: vi.fn(),
+          }}
         >
           <WidgetIntentProvider>
             <CaptureRouter>

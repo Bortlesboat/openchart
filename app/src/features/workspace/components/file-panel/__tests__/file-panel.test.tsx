@@ -31,7 +31,10 @@ import {
 } from "@openchart/app/features/workspace/components/file-panel/file-panel";
 
 const rpc = vi.hoisted(() => ({
-  resources: { workspace: { get: { query: vi.fn() } } },
+  resources: {
+    workspace: { get: { query: vi.fn() } },
+    custom_widget: { save: { mutate: vi.fn() } },
+  },
   workspace: {
     read: { query: vi.fn() },
     write: { mutate: vi.fn() },
@@ -911,5 +914,48 @@ test("a .tea tab opens the view's Tea reference", async () => {
   const { openReference, cleanup } = setup();
   fireEvent.click(await screen.findByRole("button", { name: "Tea reference" }));
   expect(openReference).toHaveBeenCalledExactlyOnceWith();
+  cleanup();
+});
+
+test("Publish saves the draft, then makes the widget file live", async () => {
+  const path = "widgets/rates.widget.tsx";
+  const { cleanup } = setup(disk("original", path));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Code" }), {
+    target: { value: "draft" },
+  });
+  rpc.workspace.write.mutate.mockResolvedValue(disk("draft", path).entry);
+  rpc.workspace.read.query.mockResolvedValue(disk("draft", path));
+  rpc.resources.custom_widget.save.mutate.mockResolvedValue({ title: "Rates" });
+  fireEvent.click(screen.getByRole("button", { name: "Publish widget" }));
+  expect(await screen.findByText("Published Rates")).toBeInTheDocument();
+  expect(rpc.workspace.write.mutate).toHaveBeenCalledOnce();
+  expect(
+    rpc.resources.custom_widget.save.mutate,
+  ).toHaveBeenCalledExactlyOnceWith({ workspaceId: "wsp_test", path });
+  expect(rpc.workspace.write.mutate.mock.invocationCallOrder[0]).toBeLessThan(
+    rpc.resources.custom_widget.save.mutate.mock.invocationCallOrder[0]!,
+  );
+  cleanup();
+});
+
+test("Publish waits out an in-flight save, which save() would skip", async () => {
+  const path = "widgets/rates.widget.tsx";
+  const { cleanup } = setup(disk("original", path));
+  const editor = await screen.findByRole("textbox", { name: "Code" });
+  let commit!: (entry: { path: string; hash: string }) => void;
+  rpc.workspace.write.mutate.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        commit = resolve;
+      }),
+  );
+  fireEvent.change(editor, { target: { value: "draft" } });
+  fireEvent.keyDown(editor, { key: "s", ctrlKey: true });
+  const publish = screen.getByRole("button", { name: "Publish widget" });
+  await waitFor(() => expect(publish).toBeDisabled());
+  rpc.workspace.read.query.mockResolvedValue(disk("draft", path));
+  await act(async () => commit(disk("draft", path).entry));
+  await waitFor(() => expect(publish).toBeEnabled());
+  expect(rpc.resources.custom_widget.save.mutate).not.toHaveBeenCalled();
   cleanup();
 });

@@ -79,6 +79,10 @@ const chart: WidgetDefinition = {
   Controls: undefined,
   Content: SavedSymbol,
 };
+const registry: Record<string, WidgetDefinition | undefined> = {
+  chart,
+  watchlist: widgetRegistry.watchlist,
+};
 
 const placementId = defineId("wdg", "WidgetPlacement.ID");
 const placement = (kind: string, x: number) => ({
@@ -178,7 +182,7 @@ function setup(widgets: Dashboard["widgets"]) {
               <DashboardView
                 id={dashboard.id}
                 transport={transport}
-                registry={{ chart, watchlist: widgetRegistry.watchlist }}
+                registry={(kind) => registry[kind]}
                 renderHeader={() => null}
               />
             </WidgetIntentProvider>

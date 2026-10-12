@@ -1,6 +1,6 @@
 # Dashboard and Widget Architecture
 
-Status: as of 2026-10-11, Dashboard placements, the Chart widget, the Workspace file widget, the Watchlist widget, and cross-widget intents (Watchlist rows raise ViewChart) are implemented. This document records the implementation boundaries and verification scope.
+Status: as of 2026-10-11, Dashboard placements, the Chart widget, the Workspace file widget, the Watchlist widget, cross-widget intents (Watchlist rows raise ViewChart) and agent-authored [custom widgets](custom-widget.md) are implemented. This document records the implementation boundaries and verification scope.
 Metabase serves only as a reference for responsibility boundaries; controls, typography, theme, and interaction styling follow the [app design guidelines](../../app/DESIGN.md).
 
 ## 1. Data model: separate user data from frontend presentation
@@ -36,8 +36,10 @@ and it has no Resource envelope of its own. Each placement has one `wdg_` ID and
 
 The frontend `WidgetDefinition` statically declares the type, controls, components, and size constraints; the Host mounts that definition by placement ID.
 A widget can read several Resources and can also read workspace data through the backend; the two need not map one to one.
-We add no Widget Resource, generic Card Resource, second chart configuration, or arbitrary `settings: JSON`.
+We add no per-placement Widget Resource, generic Card Resource, second chart configuration, or arbitrary `settings: JSON`.
+The one widget-shaped Resource is `custom_widget`: like an Indicator, it stores checked code (a `.widget.tsx` snapshot), not placement settings.
 `kind` stays a non-empty string, and existing unknown kinds show an unsupported card; adding a new frontend presentation does not require changing a backend enum.
+Built-in kinds resolve from the static registry; `custom:<kind>` resolves to a saved custom widget whose code loads inside its card. See [custom widgets](custom-widget.md).
 
 Each Dashboard contains at most one widget of each kind. Placements carry no Resource reference.
 The Chart adapter queries the unique Chart by `dashboardId`; an absent Chart offers symbol selection and creates configuration only after that action. Watchlist selection remains local to its component.
@@ -197,6 +199,7 @@ It keeps the existing backend write and invalidation path, and for now adds no o
 
 Following the default behavior stated at implementation time, the page symbol entry point modifies the focused cell of the currently selected Chart widget and keeps that Chart's existing symbol linking rules.
 The Dashboard uses `ChartSelectionContext` to provide the current chart ID and the cell ID each chart remembers; it updates when a chart or its controls are clicked/focused, and hover does not switch the target.
+A custom widget that calls `useSymbol` becomes the target when clicked or focused, and focusing a chart cell clears it; with no Chart and no focus, the first placed one is the target; see [custom widgets](custom-widget.md#canonical-controls).
 The header and Grid read this single piece of frontend selection state, derive the first visible target on first display, and neither store a separate entity nor save focus to the backend.
 When the search dialog opens it captures the full `{chartId, cellId}`, and submit uses the captured chartId; later focus changes do not change the target of this operation.
 If the target is deleted, the Dashboard switches, the dialog closes; it does not fall back to another Chart or the first cell.
@@ -273,7 +276,7 @@ flowchart LR
   Raising never rejects: outcomes are `handled`, `unavailable`, `superseded` or `failed`, and handlers report their own failures.
 - `DashboardPage` mounts one `WidgetIntentProvider` per Dashboard beside `ChartSelectionProvider`; `WidgetHost` activates a placement on pointer or focus inside its card.
   `hooks/use-intent.ts` gives sources `useIntent` (availability plus `raise`) and handlers `useIntentHandler`, registered for the containing placement only.
-- The Chart answers `ViewChart` while a saved Chart's grid is mounted: it fetches capabilities, then saves through the Chart's serialized mutation into the header's target cell (focused while visible, else first visible), re-read when the write applies. A listing already shown saves nothing.
+- The Chart answers `ViewChart` while a saved Chart's grid is mounted: it fetches capabilities, then saves through the Chart's serialized mutation into the Chart's target cell (focused while visible, else first visible), re-read when the write applies, even while the header targets a custom widget. A listing already shown saves nothing.
 - Placing no Chart leaves `ViewChart` unavailable, and a row click changes nothing. Link groups (colour channels) would later replace only the resolver: sources and handlers stay unchanged.
 
 Main owners: `lib/widget/intent/` owns intent declarations and routing (see Cross-widget intents); `app/widgets/` composes the cross-feature widget catalog and gallery; within it, `widget-registry.ts` is the only place that imports each feature's widget definition. The Dashboard route/header uses this catalog, while placement writes stay owned by the Dashboard. `features/dashboard/components/widget-host.tsx`

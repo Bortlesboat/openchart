@@ -7,10 +7,7 @@ import { DashboardView } from "@openchart/app/features/dashboard/components/dash
 import { ChartSelectionProvider } from "@openchart/app/features/chart/components/selection-provider";
 import { WidgetIntentProvider } from "@openchart/app/lib/widget/intent/provider";
 import { DashboardHeader } from "./dashboard-header";
-import {
-  widgetCatalog,
-  widgetRegistry,
-} from "@openchart/app/app/widgets/widget-registry";
+import { resolveWidget } from "@openchart/app/app/widgets/widget-registry";
 
 /** Compose the URL-selected Dashboard without creating content on mount; its widgets share one chart selection and one intent router, both reset per Dashboard. @example <DashboardPage /> */
 export function DashboardPage() {
@@ -26,7 +23,7 @@ export function DashboardPage() {
         <DashboardView
           id={dashboardId}
           transport={transport}
-          registry={widgetRegistry}
+          registry={resolveWidget}
           missingAction={
             <Button variant="outline" asChild>
               <Link to="/app" replace>
@@ -39,10 +36,7 @@ export function DashboardPage() {
               dashboard={dashboard}
               transport={transport}
               disabled={disabled}
-              onAdd={(kind) => {
-                const { definition } = widgetCatalog[kind];
-                addWidget(definition);
-              }}
+              onAdd={addWidget}
             />
           )}
         />

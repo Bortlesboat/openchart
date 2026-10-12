@@ -1,5 +1,6 @@
-// Purpose: The right side of each file panel's toolbar: Save while dirty, `.tea` actions, and one menu for the rest.
+// Purpose: The right side of each file panel's toolbar: Save while dirty, `.tea` and `.widget.tsx` actions, and one menu for the rest.
 import { useContext } from "react";
+import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DockviewPanelApi } from "dockview-react";
 import {
@@ -9,6 +10,7 @@ import {
   Ellipsis,
   ExternalLinkIcon,
   FolderOpenIcon,
+  UploadIcon,
 } from "lucide-react";
 import { Button } from "@openchart/app/components/ui/button";
 import {
@@ -32,7 +34,8 @@ import { useWorkspaceView } from "./context";
 /**
  * Actions for one file panel. Dockview re-renders the panel with merged params, so
  * `params` carries its live dirty/saving flags; the editor's save comes from the
- * view's `saves` registry by panel id, and app actions render for `.tea`. Copy,
+ * view's `saves` registry by panel id, app actions render for `.tea` and Publish
+ * for `.widget.tsx`. Copy,
  * duplicate (text only), Finder and default-app actions share one menu.
  * @example <FileActions api={api} params={params} onOpen={(path) => openWorkspaceFile(containerApi, workspaceId, path)} />
  */
@@ -83,6 +86,13 @@ export function FileActions({
         </Button>
       ) : null}
       {tea ? extraActions?.({ workspaceId, path }, save) : null}
+      {path.endsWith(".widget.tsx") ? (
+        <PublishWidgetButton
+          file={{ workspaceId, path }}
+          save={save}
+          saving={saving}
+        />
+      ) : null}
       {tea ? (
         <TooltipIconButton
           className="size-6"
@@ -132,5 +142,43 @@ export function FileActions({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  );
+}
+
+/** Saves the draft, then checks the file and makes it the live widget its kind names. Disabled while a save is in flight, which `save` would skip, so it never publishes a stale snapshot. Failures toast the check's diagnostics. */
+function PublishWidgetButton({
+  file,
+  save,
+  saving,
+}: {
+  file: { workspaceId: string; path: string };
+  save: () => Promise<unknown>;
+  saving?: boolean;
+}) {
+  const { transport } = useWorkspaceView();
+  const publish = useMutation({
+    meta: { errorTitle: "Couldn’t publish this widget" },
+    mutationFn: (input: typeof file) =>
+      transport.rpc.resources.custom_widget.save.mutate(input),
+    onSuccess: (widget) =>
+      toast.success(`Published ${widget.title}`, {
+        description: "Add it from a dashboard’s Widgets menu.",
+      }),
+  });
+  return (
+    <TooltipIconButton
+      className="size-6"
+      tooltip="Publish widget"
+      disabled={saving || publish.isPending}
+      // A failed draft save is already reported and keeps the draft.
+      onClick={() =>
+        void save().then(
+          () => publish.mutate(file),
+          () => {},
+        )
+      }
+    >
+      <UploadIcon />
+    </TooltipIconButton>
   );
 }

@@ -126,7 +126,13 @@ function setup() {
       {/* The mounted grid answers ViewChart, which reads the app's Feed client. */}
       <FeedReactContext.Provider value={{} as FeedClient}>
         <ChartSelectionContext.Provider
-          value={{ activeChartId: undefined, focusedCells: {}, focus }}
+          value={{
+            activeChartId: undefined,
+            focusedCells: {},
+            focus,
+            activeWidgetId: undefined,
+            focusWidget: vi.fn(),
+          }}
         >
           <WidgetContext.Provider
             value={{

@@ -24,7 +24,10 @@ import { cn } from "@openchart/app/utils/cn";
 
 import { WidgetHost } from "./widget-host";
 import { DashboardSeparators } from "./dashboard-separators";
-import type { WidgetDefinition } from "@openchart/app/lib/widget/widget";
+import type {
+  WidgetDefinition,
+  WidgetResolver,
+} from "@openchart/app/lib/widget/widget";
 import "react-grid-layout/css/styles.css";
 import "./dashboard.css";
 
@@ -40,7 +43,7 @@ export function DashboardGrid({
   onPlaceBeside,
 }: {
   dashboard: Dashboard | undefined;
-  registry: Readonly<Record<string, WidgetDefinition | undefined>>;
+  registry: WidgetResolver;
   transport: AppTransport;
   container: ReturnType<typeof useContainerWidth>;
   disabled: boolean;
@@ -199,7 +202,7 @@ export function DashboardGrid({
                   placement={placement}
                   dashboardId={dashboard.id}
                   transport={transport}
-                  definition={registry[placement.kind]}
+                  definition={registry(placement.kind)}
                   disabled={disabled}
                   onPlaceBeside={onPlaceBeside}
                   onRemove={() =>
