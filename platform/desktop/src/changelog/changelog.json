@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.1.15",
+    "date": "2026-10-11",
+    "items": [
+      "Browse one workspace at a time, preview files with Quick Look, and open documents, spreadsheets, PDFs, and media.",
+      "Click a watchlist symbol or press Enter to show it in the dashboard's chart.",
+      "Watchlists now show price history sparklines; hover to compare every row at the same time.",
+      "OpenChart now checks for new releases at startup and every 10 minutes."
+    ]
+  },
+  {
     "version": "0.1.14",
     "date": "2026-10-11",
     "items": [

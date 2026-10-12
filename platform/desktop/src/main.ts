@@ -464,7 +464,7 @@ function start(): void {
               type: UpdateSourceType.StaticStorage,
               baseUrl: process.env.OPENCHART_UPDATE_URL!,
             },
-            updateInterval: "1 hour",
+            updateInterval: "10 minutes",
             // The sidebar offers the restart instead of an interrupting dialog.
             // Without it, Squirrel installs the download on the next normal quit.
             onNotifyUser: ({ releaseName }) => {
