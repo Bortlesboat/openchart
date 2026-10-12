@@ -15,6 +15,7 @@ const language = vi.hoisted(() => {
     start: vi.fn(() => started),
     dispose: vi.fn(async () => {}),
     sendRequest: vi.fn(),
+    retainModel: vi.fn(async () => ({ dispose: vi.fn() })),
     middleware: undefined as
       | undefined
       | {
@@ -48,16 +49,21 @@ vi.mock("vscode", () => ({
   Uri: { file: (path: string) => ({ path }) },
 }));
 vi.mock("monaco-editor", () => ({
-  Uri: { file: (path: string) => ({ path }) },
+  Uri: {
+    file: (path: string) => ({ path }),
+    parse: (path: string) => ({ path }),
+  },
 }));
 vi.mock("@codingame/monaco-vscode-api", () => ({
   ICodeEditorService: "editor",
   ITextModelService: "model",
   getService: async () => ({
+    createModelReference: language.retainModel,
     registerTextModelContentProvider: () => ({ dispose() {} }),
     registerCodeEditorOpenHandler: () => ({ dispose() {} }),
   }),
 }));
+
 vi.mock("@codingame/monaco-vscode-files-service-override", () => ({
   RegisteredFile: class {},
   RegisteredFileSystemProvider: class {
@@ -133,5 +139,35 @@ test("⌘ Click on a documented name opens the reference; F12 still goes to the 
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "F12" }));
   expect(await definition(() => "source")).toBe("source");
   expect(openReference).toHaveBeenCalledOnce();
+  session.dispose();
+});
+
+test("model acquisition does not wait for LSP initialization", async () => {
+  let initialized!: () => void;
+  language.start.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      initialized = resolve;
+    }),
+  );
+  const transport = createTransport({ origin: "http://127.0.0.1:41000" });
+  vi.spyOn(transport.hose, "openChannel").mockReturnValue({
+    send: vi.fn(),
+    close: vi.fn(),
+  });
+  vi.spyOn(transport.hose, "onState").mockReturnValue(() => {});
+  const session = createTeaLanguageClient(
+    transport,
+    "default",
+    "/workspace",
+    () => {},
+    () => {},
+    vi.fn(),
+  );
+  const reference = await session.retainModel("file:///workspace/main.tea");
+  expect(language.retainModel).toHaveBeenCalledWith({
+    path: "file:///workspace/main.tea",
+  });
+  reference.dispose();
+  initialized();
   session.dispose();
 });

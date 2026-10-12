@@ -215,7 +215,7 @@ The frontend `lib/workspace/workspace.ts` is the Workspace API shared by feature
 
 The App reads with React Query and writes with mutations, with no optimistic overwrites. The file query prefix is `[["workspace"]]`. The index key adds workspaceId, and the content key also adds path. `lib/workspace/workspace-observation.ts` derives file/directory interests automatically from active Queries (a Tea program read observes its entry file and all imports, based on its result), and merges them into one
 `workspace.watch` tRPC SSE connection. The Query itself owns the consumer count. Components just use ordinary queries.
-RxJS merges synchronous Query events, dedupes the interest set, and switches subscriptions. Notifications only invalidate the matching active Queries.
+RxJS merges synchronous Query events, dedupes the interest set, and switches subscriptions. Notifications explicitly cancel matching reads without cached data before invalidating matching Queries and refetching active ones. Invalidation alone can reuse an unfinished initial read, allowing pre-change bytes to become the current result. Reads with cached data use Query's normal refetch cancellation, so existing awaiters follow the replacement fetch. The cancellation-to-refetch chain belongs to the observation subscription, so releasing it prevents a later refetch from starting.
 Late notifications after an old subscription exits are dropped, with no separate connection generation or manual lifecycle state.
 A collapsed directory unmounts its child queries through Collapsible, and closing a file unmounts its content query. Cached or disabled queries hold no observation.
 Reopening reads disk automatically, and the initial notification after a reconnect covers changes made while disconnected. Workspace does not use Hose.
@@ -226,6 +226,19 @@ The existing app event connection still handles:
 - Both mutation success and failure cancel/refetch the matching queries. A failed save and a later failed refetch are shown separately.
 
 The Workspace file page lives at `/app/workspaces`. The top level shows all registered workspaces. Each root collapses independently, and hovering shows the full path. The registration list and the direct children of expanded directories use the shared Query, and no current workspace selection is kept. A Sidebar-11 file tree and a single-group Dockview Tab layout form the file view. A Tab's identity and read/write target are decided by `{workspaceId, path}`, so files with the same name in different workspaces can be open at once. Code uses Monaco, Markdown uses Milkdown Crepe by default, images use img, and PDF uses EmbedPDF. All files use the same read Query: text is decoded strictly as UTF-8 on the frontend, and images/PDF use Blob URLs that get cleaned up. Crepe, the Monaco worker, and PDFium WASM are bundled with the app and loaded on demand.
+
+The Tea editor acquires a model reference before mounting Monaco, so the VS Code
+resolver creates and owns the model. The editor releases that reference on
+unmount, including acquisition that finishes after closing. Acquiring file models
+does not wait for LSP initialization; language support starts independently. A
+reference that merely adopts a Monaco-created model does not own its disposal.
+
+The shared CodeEditor applies its latest controlled value when Monaco mounts,
+before the caller's mount callback and edit listener. Monaco React can reuse a
+model retained by language navigation or Peek Definition without applying the
+initial value. A fresh file read alone therefore cannot refresh that model on
+reopen. The panel's value remains authoritative, including any unsaved draft;
+model retention and disposal still belong to the existing language references.
 
 Markdown Edit / Source share one file draft, and Source uses Monaco. Crepe initialization and disk sync produce no edits. Editing transactions update the draft synchronously, and undoing all edits restores the original text. Visual editing normalizes Markdown formatting. Frontmatter, or content that cannot survive parsing, automatically goes to Source, so HTML and similar content is not lost. Uploaded images are embedded as data URLs, and temporary Blob addresses are never saved. Crepe keeps its official components and styles, with colors and fonts mapped to App tokens.
 

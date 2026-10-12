@@ -1,6 +1,6 @@
 // Purpose: Share the bundled Monaco runtime, readiness, theme and editor defaults across app surfaces.
 import MonacoEditor, { type EditorProps } from "@monaco-editor/react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { monacoReady } from "@openchart/app/lib/monaco/monaco";
 import { useDarkTheme } from "@openchart/app/lib/theme/theme";
 import "./code-editor.css";
@@ -10,6 +10,8 @@ import "./code-editor.css";
  * @example <CodeEditor language="tea" value={source} options={{ readOnly: true }} />
  */
 export function CodeEditor({ options, ...props }: Omit<EditorProps, "theme">) {
+  const current = useRef(props);
+  current.current = props;
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<Error>();
   const dark = useDarkTheme();
@@ -52,6 +54,15 @@ export function CodeEditor({ options, ...props }: Omit<EditorProps, "theme">) {
     <MonacoEditor
       height="100%"
       {...props}
+      onMount={(editor, monaco) => {
+        // Monaco React reuses a retained model without applying its initial
+        // controlled value. Bind the caller's current text before edit listeners
+        // attach; Workspace drafts remain authoritative through that value.
+        const { value, onMount } = current.current;
+        if (value !== undefined && editor.getValue() !== value)
+          editor.setValue(value);
+        onMount?.(editor, monaco);
+      }}
       // Monaco's theme is global: every editor must use the applied app theme.
       theme={dark ? "Default Dark+" : "Default Light+"}
       options={{

@@ -400,13 +400,11 @@ export function createTeaLanguageClient(
     .catch(reportError);
 
   return {
-    /** Keeps a Tea editor's model alive while definition/peek references come and go. Release the returned reference when the editor closes. @example const ref = await session.retainModel(uri); */
+    /** Acquires the resolver-owned model before an editor mounts, independently of LSP initialization. Release the returned reference when the editor closes. The caller first awaits monacoReady. @example const ref = await session.retainModel(uri); */
     async retainModel(uri: string) {
-      await starting;
+      const service = await getService(ITextModelService);
       if (disposed) throw new Error("Tea language session is closed");
-      return (await getService(ITextModelService)).createModelReference(
-        monaco.Uri.parse(uri),
-      );
+      return service.createModelReference(monaco.Uri.parse(uri));
     },
     /** Reads compiler-shipped source for a read-only library tab. @example await session.readLibrary("tea-lib:/ta.tea"); */
     readLibrary,
