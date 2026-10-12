@@ -138,12 +138,16 @@ export class CodexLanguageModel implements LanguageModelV4 {
     outcomes: Map<string, ToolOutcome>,
     abortSignal: AbortSignal | undefined,
   ): Promise<DynamicToolOutput> {
-    translator.hostToolCalled(
-      params.threadId,
-      params.callId,
-      params.tool,
-      params.arguments,
-    );
+    if (
+      !translator.hostToolCalled(
+        params.threadId,
+        params.turnId,
+        params.callId,
+        params.tool,
+        params.arguments,
+      )
+    )
+      return { contentItems: [], success: false };
     const tool = tools[params.tool];
     const text = (value: unknown) =>
       typeof value === "string" ? value : JSON.stringify(value ?? null);
@@ -294,7 +298,8 @@ export class CodexLanguageModel implements LanguageModelV4 {
           );
         const isQuestion =
           serverRequest.method === "item/tool/requestUserInput";
-        if (isQuestion) translator.questionRequested(serverRequest.params);
+        if (isQuestion && !translator.questionRequested(serverRequest.params))
+          return declineServerRequest(serverRequest.method);
         try {
           const answer =
             (await request.requests?.(serverRequest, {
