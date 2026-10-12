@@ -486,3 +486,141 @@ test("a program read follows its entry, then every file it reached", async () =>
   expect(read).toHaveBeenCalledTimes(2);
   expect(error).not.toHaveBeenCalled();
 });
+
+test("a file notification supersedes an unfinished read while a program keeps its interest across reopen", async () => {
+  const { transport, client } = setup();
+  const error = vi.fn();
+  const observation = observeWorkspaceQueries(transport, client, error);
+  cleanups.push(() => observation.unsubscribe());
+  // Another consumer can keep the file watched when its editor closes.
+  const program = new QueryObserver(client, {
+    queryKey: workspaceQueryKeys.program(transport.url, "wsp_test", "main.tea"),
+    queryFn: async () => ({ sources: { "main.tea": "source" } }),
+  });
+  cleanups.push(program.subscribe(() => {}));
+  await waitFor(() =>
+    expect(rpc.workspace.watch.subscribe).toHaveBeenCalledOnce(),
+  );
+  let finishOld!: (value: ReturnType<typeof file>) => void;
+  rpc.workspace.read.query
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        }),
+    )
+    .mockResolvedValue(file("new"));
+  const query = new QueryObserver(
+    client,
+    workspaceFileQueryOptions(transport, "wsp_test", "main.tea"),
+  );
+  const close = query.subscribe(() => {});
+  cleanups.push(close);
+  await waitFor(() =>
+    expect(rpc.workspace.watch.subscribe).toHaveBeenCalledOnce(),
+  );
+  const [input, current] = rpc.workspace.watch.subscribe.mock.calls[0]!;
+  current.onData(input.interests[0]);
+  finishOld(file("old"));
+  await waitFor(() =>
+    expect(query.getCurrentResult().data).toEqual(file("new")),
+  );
+  expect(rpc.workspace.read.query.mock.calls[0]![1].signal.aborted).toBe(true);
+  close();
+  // Flush the interest update while only the program remains mounted.
+  await Promise.resolve();
+  const reopened = new QueryObserver(
+    client,
+    workspaceFileQueryOptions(transport, "wsp_test", "main.tea"),
+  );
+  cleanups.push(reopened.subscribe(() => {}));
+  expect(reopened.getCurrentResult().data).toEqual(file("new"));
+  expect(rpc.workspace.watch.subscribe).toHaveBeenCalledOnce();
+  expect(error).not.toHaveBeenCalled();
+});
+
+test("a notification keeps cached-read awaiters attached to the replacement fetch", async () => {
+  const { transport, client } = setup();
+  rpc.workspace.read.query.mockResolvedValueOnce(file("initial"));
+  const error = vi.fn();
+  const observation = observeWorkspaceQueries(transport, client, error);
+  cleanups.push(() => observation.unsubscribe());
+  const options = workspaceFileQueryOptions(transport, "wsp_test", "main.tea");
+  const query = new QueryObserver(client, options);
+  cleanups.push(query.subscribe(() => {}));
+  await waitFor(() =>
+    expect(query.getCurrentResult().data).toEqual(file("initial")),
+  );
+  await waitFor(() =>
+    expect(rpc.workspace.watch.subscribe).toHaveBeenCalledOnce(),
+  );
+  let finishOld!: (value: ReturnType<typeof file>) => void;
+  let finishNew!: (value: ReturnType<typeof file>) => void;
+  rpc.workspace.read.query
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishNew = resolve;
+        }),
+    );
+  const settled = vi.fn();
+  const refresh = client
+    .refetchQueries({ queryKey: options.queryKey })
+    .then(() => {
+      settled(query.getCurrentResult().data);
+    });
+  const [input, current] = rpc.workspace.watch.subscribe.mock.calls[0]!;
+  current.onData(input.interests[0]);
+  await waitFor(() =>
+    expect(rpc.workspace.read.query).toHaveBeenCalledTimes(3),
+  );
+  expect(settled).not.toHaveBeenCalled();
+  finishNew(file("latest"));
+  await refresh;
+  expect(settled).toHaveBeenCalledWith(file("latest"));
+  finishOld(file("superseded"));
+  await Promise.resolve();
+  expect(query.getCurrentResult().data).toEqual(file("latest"));
+  expect(error).not.toHaveBeenCalled();
+});
+
+test("disposing observation during read cancellation prevents a late refetch", async () => {
+  const { transport, client } = setup();
+  const error = vi.fn();
+  rpc.workspace.read.query.mockResolvedValue(file("disk"));
+  const observation = observeWorkspaceQueries(transport, client, error);
+  cleanups.push(() => observation.unsubscribe());
+  const query = new QueryObserver(
+    client,
+    workspaceFileQueryOptions(transport, "wsp_test", "main.tea"),
+  );
+  cleanups.push(query.subscribe(() => {}));
+  await waitFor(() =>
+    expect(query.getCurrentResult().data).toEqual(file("disk")),
+  );
+  await waitFor(() =>
+    expect(rpc.workspace.watch.subscribe).toHaveBeenCalledOnce(),
+  );
+  let finishCancellation!: () => void;
+  vi.spyOn(client, "cancelQueries").mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishCancellation = resolve;
+      }),
+  );
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  const [input, current] = rpc.workspace.watch.subscribe.mock.calls[0]!;
+  current.onData(input.interests[0]);
+  observation.unsubscribe();
+  finishCancellation();
+  await Promise.resolve();
+  expect(invalidate).not.toHaveBeenCalled();
+  expect(rpc.workspace.read.query).toHaveBeenCalledOnce();
+  expect(error).not.toHaveBeenCalled();
+});

@@ -1,11 +1,12 @@
 // Purpose: Derive one Workspace SSE subscription from React Query's active readers.
-import type { Query, QueryClient } from "@tanstack/react-query";
+import type { Query, QueryClient, QueryFilters } from "@tanstack/react-query";
 import {
   Observable,
   EMPTY,
   asapScheduler,
   auditTime,
   distinctUntilChanged,
+  from,
   map,
   mergeMap,
   startWith,
@@ -98,14 +99,22 @@ export function observeWorkspaceQueries(
       distinctUntilChanged((left, right) => left === right, JSON.stringify),
       switchMap((interests) =>
         observeInterests(interests).pipe(
-          // Observed queries are active: invalidation cancels their in-flight read and refetches.
-          mergeMap((notified) =>
-            client.invalidateQueries({
+          mergeMap((notified) => {
+            const filters = {
               queryKey: [["workspace"], transport.url, notified.workspaceId],
               predicate: (query) =>
                 interestsOf(query).some((interest) => same(interest, notified)),
-            }),
-          ),
+            } satisfies QueryFilters;
+            // Invalidation alone reuses an unfinished first fetch (no cached data).
+            // Cancel it explicitly so pre-change bytes cannot become the fresh result.
+            return from(
+              client.cancelQueries({
+                ...filters,
+                predicate: (query) =>
+                  query.state.data === undefined && filters.predicate(query),
+              }),
+            ).pipe(mergeMap(() => client.invalidateQueries(filters)));
+          }),
         ),
       ),
     )
