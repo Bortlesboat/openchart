@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.1.16",
+    "date": "2026-10-12",
+    "items": [
+      "Ask the Agent to build custom dashboard widgets, or write and publish them from Workspace.",
+      "Watchlists now support Formula columns with configurable indicator outputs, parameters, and bar settings.",
+      "Measure price changes, bar counts, elapsed time, and volume from the chart toolbar or with Shift-click.",
+      "Drag shared dashboard dividers to resize adjacent widgets; watchlist symbols stay visible as you scroll.",
+      "Comparison symbols now default to candlesticks with distinct colors.",
+      "Fixed native Agent runs stopping during quiet periods and losing completed work after a failure."
+    ]
+  },
+  {
     "version": "0.1.15",
     "date": "2026-10-11",
     "items": [
