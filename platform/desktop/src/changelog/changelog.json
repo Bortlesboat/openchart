@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.1.18",
+    "date": "2026-10-13",
+    "items": [
+      "Watchlists can run AI research for each symbol and show the answers in custom columns.",
+      "Fixed hidden indicator outputs affecting their panel's automatic scale.",
+      "Fixed Shift-wheel direction for vertical-axis zoom and horizontal chart scrolling."
+    ]
+  },
+  {
     "version": "0.1.17",
     "date": "2026-10-12",
     "items": [
