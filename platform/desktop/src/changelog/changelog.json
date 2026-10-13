@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.19",
+    "date": "2026-10-13",
+    "items": [
+      "Charts have a CAGR tool to measure growth, volatility, price return and Sharpe over a selected time range.",
+      "Saved scripts can be added directly to the selected chart from the indicator library."
+    ]
+  },
+  {
     "version": "0.1.18",
     "date": "2026-10-13",
     "items": [
