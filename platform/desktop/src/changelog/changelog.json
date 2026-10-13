@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.1.17",
+    "date": "2026-10-12",
+    "items": [
+      "Hide individual indicator outputs and edit each output's color and style in Series settings.",
+      "Watchlists highlight changed digits in live prices and Formula values.",
+      "Indicator and watchlist Formula symbol inputs now open the symbol picker.",
+      "Fixed Workspace files reopening with stale text after changes on disk.",
+      "Fixed busy live charts requiring repeated resyncs and replaying every tick when returning to a dashboard.",
+      "Fixed Codex subagent follow-ups losing replies or failing on tool calls."
+    ]
+  },
+  {
     "version": "0.1.16",
     "date": "2026-10-12",
     "items": [
