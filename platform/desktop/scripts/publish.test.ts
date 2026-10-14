@@ -26,33 +26,35 @@ afterEach(async () => {
 async function fixture(
   selected: DesktopTarget[],
   signing: "signed" | "unsigned" = "signed",
+  releaseVersion = version,
 ) {
   const directory = await mkdtemp(join(tmpdir(), "openchart-publish-"));
   directories.push(directory);
   for (const target of selected) {
-    const folder = join(directory, version, target);
+    const folder = join(directory, releaseVersion, target);
     await mkdir(folder, { recursive: true });
-    const stem = `OpenChart-${version}-${target}`;
+    const stem = `OpenChart-${releaseVersion}-${target}`;
     let files: Record<string, string>;
     if (target === "win32-x64") {
       const payload = "windows package";
-      const packageName = `OpenChart-${version}-full.nupkg`;
+      const packageName = `OpenChart-${releaseVersion}-full.nupkg`;
       files = {
         [`${stem}-setup.exe`]: "windows installer",
         [packageName]: payload,
         RELEASES: `${createHash("sha1").update(payload).digest("hex")} ${packageName} ${Buffer.byteLength(payload)}\n`,
+        "WINDOWS-SIGNATURES.json": JSON.stringify({ version: releaseVersion }),
       };
     } else {
       files = {
         [`${stem}.dmg`]: `installer ${target}`,
         [`${stem}.zip`]: `updater ${target}`,
         "RELEASES.json": JSON.stringify({
-          currentRelease: version,
+          currentRelease: releaseVersion,
           releases: [
             {
-              version,
+              version: releaseVersion,
               updateTo: {
-                version,
+                version: releaseVersion,
                 url: `${releaseRoot}/${target.replace("-", "/")}/${stem}.zip`,
               },
             },
@@ -65,7 +67,7 @@ async function fixture(
     await writeBuildReceipt(
       folder,
       {
-        version,
+        version: releaseVersion,
         target,
         commit,
         signing,
@@ -218,6 +220,40 @@ describe("desktop publication inventory", () => {
 });
 
 describe("retry-safe publication", () => {
+  it("preserves immutable signature evidence across successive Windows releases", async () => {
+    const nextVersion = "1.2.4";
+    const first = await preparePublication(
+      await fixture(["win32-x64"]),
+      version,
+      ["win32-x64"],
+    );
+    const second = await preparePublication(
+      await fixture(["win32-x64"], "signed", nextVersion),
+      nextVersion,
+      ["win32-x64"],
+    );
+    const remote = transport();
+    await publishPlan(first, remote.adapter);
+    // A new GitHub Release has no existing assets; the object bucket is shared.
+    await publishPlan(second, {
+      ...remote.adapter,
+      release: async () => ({}),
+    });
+    for (const plan of [first, second]) {
+      const evidence = plan.assets.find(
+        (asset) => asset.name === "WINDOWS-SIGNATURES.json",
+      )!;
+      expect(
+        remote.objects.get(
+          `openchart/win32/x64/WINDOWS-SIGNATURES.json-${plan.version}`,
+        ),
+      ).toBe(evidence.sha256);
+    }
+    expect(
+      remote.objects.has("openchart/win32/x64/WINDOWS-SIGNATURES.json"),
+    ).toBe(false);
+  });
+
   it("writes every target's downloads before feeds and skips identical uploads on retry", async () => {
     const directory = await fixture(["darwin-arm64", "darwin-x64"]);
     const plan = await preparePublication(directory, version, [

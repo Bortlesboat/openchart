@@ -80,8 +80,10 @@ const macFeed = z.object({
  * Reads target directories and validates receipts, SOURCE, exact checksum
  * inventories and updater references before producing a publication plan.
  * Only signed artifacts can enter the public feed. All targets must share one
- * source commit. No files or remote state are changed; invalid/incomplete
- * inventories reject. `directory` owns version/target subdirectories.
+ * source commit. Signature evidence uses versioned object names while local
+ * filenames and GitHub assets stay unchanged. No files or remote state are
+ * changed; invalid/incomplete inventories reject. `directory` owns
+ * version/target subdirectories.
  *
  * @example
  * const plan = await preparePublication('out/release', '1.2.3', ['darwin-x64']);
@@ -216,7 +218,11 @@ export async function preparePublication(
     };
     for (const file of receipt.files) {
       if (file.name === feed) continue;
-      const asset = await addUpload(file.name, file.name, "immutable");
+      const remoteName =
+        file.name === "WINDOWS-SIGNATURES.json"
+          ? `${file.name}-${version}`
+          : file.name;
+      const asset = await addUpload(file.name, remoteName, "immutable");
       assets.push({ ...asset, name: file.name });
     }
     for (const name of ["SHA256SUMS", "SOURCE", "BUILD.json"]) {
