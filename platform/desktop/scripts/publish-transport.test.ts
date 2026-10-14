@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { operatorTransport, publishPlan } from "./publish.ts";
 
@@ -25,11 +25,100 @@ type Release = {
 const directories: string[] = [];
 afterEach(async () => {
   commands.run.mockReset();
+  vi.unstubAllEnvs();
   await Promise.all(
     directories
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   );
+});
+
+test.each([
+  [true, "pointer"],
+  [false, "immutable"],
+] as const)(
+  "Windows launches npm's npx entry point with literal upload arguments (npm caller: %s)",
+  async (npmCaller, kind) => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    const executable = Object.getOwnPropertyDescriptor(process, "execPath")!;
+    const node = join(tmpdir(), "Official Node with spaces", "node.exe");
+    const npm = join(tmpdir(), "Official npm with spaces", "bin", "npm-cli.js");
+    const upload = {
+      path: join(tmpdir(), "Release & candidate", "OpenChart setup.exe"),
+      name: "OpenChart-1.2.3-win32-x64-setup.exe",
+      key: "openchart/win32/x64/OpenChartSetup.exe",
+      sha256: "a".repeat(64),
+      kind,
+    };
+    commands.run.mockResolvedValue({ stdout: "", stderr: "" });
+    vi.stubEnv("npm_execpath", npmCaller ? npm : undefined);
+    Object.defineProperty(process, "platform", { value: "win32" });
+    Object.defineProperty(process, "execPath", { value: node });
+    try {
+      await operatorTransport("Release notes").putObject(upload);
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+      Object.defineProperty(process, "execPath", executable);
+    }
+    expect(commands.run).toHaveBeenCalledExactlyOnceWith(
+      node,
+      [
+        npmCaller
+          ? join(dirname(npm), "npx-cli.js")
+          : join(dirname(node), "node_modules/npm/bin/npx-cli.js"),
+        "--yes",
+        "wrangler@4.135.0",
+        "r2",
+        "object",
+        "put",
+        `openchart-releases/${upload.key}`,
+        "--remote",
+        "--file",
+        upload.path,
+        "--cache-control",
+        kind === "immutable"
+          ? "public, max-age=31536000, immutable"
+          : "no-store",
+        ...(kind === "pointer"
+          ? [
+              "--content-disposition",
+              'attachment; filename="OpenChart-1.2.3-win32-x64-setup.exe"',
+            ]
+          : []),
+        "--content-type",
+        "application/vnd.microsoft.portable-executable",
+      ],
+      { maxBuffer: 8 * 1024 * 1024 },
+    );
+  },
+);
+
+test("Darwin retains its native npx invocation", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  commands.run.mockResolvedValue({ stdout: "", stderr: "" });
+  Object.defineProperty(process, "platform", { value: "darwin" });
+  try {
+    await operatorTransport("Release notes").putObject({
+      path: "/Release directory/OpenChart.dmg",
+      name: "OpenChart.dmg",
+      key: "openchart/darwin/arm64/OpenChart.dmg",
+      sha256: "a".repeat(64),
+      kind: "pointer",
+    });
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+  expect(commands.run).toHaveBeenCalledExactlyOnceWith(
+    "npx",
+    expect.arrayContaining([
+      "--file",
+      "/Release directory/OpenChart.dmg",
+      "--content-disposition",
+      'attachment; filename="OpenChart.dmg"',
+    ]),
+    { maxBuffer: 8 * 1024 * 1024 },
+  );
+  expect(commands.run.mock.calls[0]![1][0]).toBe("--yes");
 });
 
 async function fixture(

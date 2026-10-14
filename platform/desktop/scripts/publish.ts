@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -420,9 +420,18 @@ export function operatorTransport(notes: string): PublicationTransport {
       return hash.digest("hex");
     },
     async putObject(upload) {
+      // Windows npx.cmd cannot be spawned directly by execFile. Use npm's
+      // installed JavaScript entry point with the current Node executable.
+      const npxCli =
+        process.platform === "win32"
+          ? process.env.npm_execpath
+            ? join(dirname(process.env.npm_execpath), "npx-cli.js")
+            : join(dirname(process.execPath), "node_modules/npm/bin/npx-cli.js")
+          : undefined;
       await run(
-        "npx",
+        npxCli ? process.execPath : "npx",
         [
+          ...(npxCli ? [npxCli] : []),
           "--yes",
           "wrangler@4.135.0",
           "r2",
