@@ -803,15 +803,26 @@ async function verifyWindowsHeader(page: Page) {
       application!.evaluate(() => Reflect.get(globalThis, "smokeMenuOpened")),
     )
     .toBe(true);
-  await application!.evaluate(({ Menu, BrowserWindow }) => {
-    Menu.getApplicationMenu()!
-      .getMenuItemById("edit")!
-      .submenu!.closePopup(BrowserWindow.getAllWindows()[0]!);
-    Reflect.deleteProperty(globalThis, "smokeMenuOpened");
-  });
+  // Electron emits menu-will-show before Chromium shows the native popup.
+  // Repeat the native close until its callback has restored the renderer state.
+  await expect
+    .poll(async () => {
+      await application!.evaluate(({ Menu, BrowserWindow }) => {
+        Menu.getApplicationMenu()!
+          .getMenuItemById("edit")!
+          .submenu!.closePopup(BrowserWindow.getAllWindows()[0]!);
+      });
+      return header
+        .getByRole("menuitem", { name: "Edit", exact: true })
+        .getAttribute("aria-expanded");
+    })
+    .toBe("false");
   await expect(
     header.getByRole("menuitem", { name: "Edit", exact: true }),
   ).toHaveAttribute("aria-expanded", "false");
+  await application!.evaluate(() => {
+    Reflect.deleteProperty(globalThis, "smokeMenuOpened");
+  });
   await application!.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0]!;
     const apply = window.setTitleBarOverlay.bind(window);
