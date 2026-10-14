@@ -18,6 +18,17 @@ FORBIDDEN_HEADING = re.compile(
     r"(?im)^#{1,6} .*\b(?:implementation (?:plan|order|workstreams)|roadmap|pending triage|proposal)\b"
 )
 PUBLIC_ENV = {"app/.env.development", "app/.env.production"}
+# Reviewed fixtures verify native UTF-8 streams, arguments and filesystem paths.
+# Keep this exact and file-scoped; test files still reject unrelated internal prose.
+UNICODE_TEST_FIXTURES = {
+    "common/models/src/providers/antigravity/adapter/native-config.test.ts": (
+        "\u5e02\u5834",
+    ),
+    "platform/desktop/tests/native-executable.test.ts": (
+        "\u6d4b\u8bd5",
+        "\u4e2d\u6587",
+    ),
+}
 
 
 def files(repository):
@@ -64,6 +75,8 @@ for relative in files(ROOT):
     # This reviewed fixture verifies sentence boundaries in Chinese research replies.
     if name == "app/src/features/watchlist/__tests__/semantic-answer.test.ts":
         text = text.replace('"增长稳健。利润率改善。", "增长稳健。"', "")
+    for fixture in UNICODE_TEST_FIXTURES.get(name, ()):
+        text = text.replace(fixture, "")
     if name != "scripts/check-public-content.py" and HAN.search(text):
         errors.append(f"{name}: Chinese internal text needs review")
 
