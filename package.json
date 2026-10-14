@@ -10,6 +10,7 @@
     "demo/*"
   ],
   "overrides": {
+    "@electron/windows-sign": "2.0.6",
     "nwsapi": "2.2.24",
     "prettier": "3.9.6",
     "rxjs": "7.8.2",
@@ -21,9 +22,9 @@
     "check:static": "npm run db:check && npm run lint && npm run format",
     "db:check": "npm --prefix server run db:check",
     "lint": "npm run lint:core && npm --prefix app run lint",
-    "lint:core": "for package_dir in common/*; do if [ -f \"$package_dir/tsconfig.json\" ]; then eslint --max-warnings 0 \"$package_dir/**/*.ts\" || exit; fi; done && eslint --max-warnings 0 \"server/**/*.ts\" && eslint --max-warnings 0 \"platform/**/*.{ts,tsx}\" && eslint --max-warnings 0 \"demo/**/*.{ts,tsx}\"",
+    "lint:core": "node scripts/lint-core.mjs",
     "lint:fix": "npm run lint:fix:core && npm --prefix app run lint:fix",
-    "lint:fix:core": "for package_dir in common/*; do if [ -f \"$package_dir/tsconfig.json\" ]; then eslint --max-warnings 0 \"$package_dir/**/*.ts\" --fix || exit; fi; done && eslint --max-warnings 0 \"server/**/*.ts\" --fix && eslint --max-warnings 0 \"platform/**/*.{ts,tsx}\" --fix && eslint --max-warnings 0 \"demo/**/*.{ts,tsx}\" --fix",
+    "lint:fix:core": "node scripts/lint-core.mjs --fix",
     "test": "npm run test:core && npm run test:app",
     "test:core": "vitest run --exclude 'app/**' --exclude 'sean_demo/**' --exclude 'vendor/**'",
     "test:app": "npm --prefix app test",

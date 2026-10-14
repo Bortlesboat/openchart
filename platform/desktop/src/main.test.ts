@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
 import type { Notify } from "./host-protocol";
+import type {
+  BrowserWindowConstructorOptions,
+  MenuItemConstructorOptions,
+  PopupOptions,
+} from "electron";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -119,14 +124,24 @@ async function host(
       setWindowOpenHandler: vi.fn(),
       send: vi.fn(),
       mainFrame: { url: "http://127.0.0.1:5173/app" },
+      navigationHistory: {
+        canGoBack: vi.fn(() => false),
+        canGoForward: vi.fn(() => false),
+        goBack: vi.fn(),
+        goForward: vi.fn(),
+      },
     });
     readonly loadURL = vi.fn(async () => {});
     readonly show = vi.fn();
     readonly isMinimized = vi.fn(() => true);
     readonly restore = vi.fn();
     readonly focus = vi.fn();
-    constructor() {
+    readonly setMenuBarVisibility = vi.fn();
+    readonly setTitleBarOverlay = vi.fn();
+    readonly options: BrowserWindowConstructorOptions;
+    constructor(options: BrowserWindowConstructorOptions) {
       super();
+      this.options = options;
       windows.push(this);
       opened();
     }
@@ -188,6 +203,15 @@ async function host(
   const openPath = vi.fn(async () => "");
   const showItemInFolder = vi.fn();
   const openExternal = vi.fn(async () => {});
+  const popup = vi.fn((options: PopupOptions) => options.callback?.());
+  const buildFromTemplate = vi.fn((template: MenuItemConstructorOptions[]) => {
+    const items = template.map((item) => ({ ...item, submenu: { popup } }));
+    return {
+      items,
+      getMenuItemById: (id: string) => items.find((item) => item.id === id),
+    };
+  });
+  const setApplicationMenu = vi.fn();
   vi.doMock("electron", () => ({
     app,
     autoUpdater: { quitAndInstall },
@@ -199,6 +223,7 @@ async function host(
       showOpenDialog,
     },
     ipcMain: { handle },
+    Menu: { buildFromTemplate, setApplicationMenu },
     net: {},
     Notification: SystemNotification,
     session: {
@@ -272,12 +297,142 @@ async function host(
     configureClerk,
     executeInstaller,
     installer,
+    popup,
+    buildFromTemplate,
+    setApplicationMenu,
   };
 }
 
 function waitForHost(assertion: () => void) {
   return vi.waitFor(assertion, { timeout: 5_000 });
 }
+
+test.each(["win32", "darwin", "linux"] as const)(
+  "%s uses its own window chrome without changing renderer isolation",
+  async (platform) => {
+    const runtime = await host(undefined, false, [], { platform });
+    runtime.key.resolve(new Uint8Array(32));
+    runtime.ready.resolve(4321);
+    await waitForHost(() => expect(runtime.opened).toHaveBeenCalledOnce());
+    const window = runtime.windows[0]!;
+    expect(window.options).toMatchObject({
+      titleBarStyle:
+        platform === "win32"
+          ? "hidden"
+          : platform === "darwin"
+            ? "hiddenInset"
+            : "default",
+      titleBarOverlay: platform === "win32" ? true : undefined,
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false,
+      },
+    });
+    const connection = runtime.handle.mock.calls.find(
+      ([name]) => name === "desktop.connection",
+    )![1]({
+      sender: window.webContents,
+      senderFrame: window.webContents.mainFrame,
+    });
+    expect(connection.notificationGuide).toBe(
+      platform === "darwin"
+        ? "macos"
+        : platform === "win32"
+          ? "windows"
+          : undefined,
+    );
+    if (platform === "win32") {
+      expect(window.setMenuBarVisibility).toHaveBeenCalledWith(false);
+      expect(runtime.setApplicationMenu).toHaveBeenCalledOnce();
+      const read = runtime.handle.mock.calls.find(
+        ([name]) => name === "desktop.connection",
+      )![1];
+      expect(
+        read({
+          sender: window.webContents,
+          senderFrame: window.webContents.mainFrame,
+        }).windowChrome.menus,
+      ).toEqual([
+        { id: "file", label: "File" },
+        { id: "edit", label: "Edit" },
+        { id: "view", label: "View" },
+        { id: "help", label: "Help" },
+      ]);
+    } else {
+      expect(window.setMenuBarVisibility).not.toHaveBeenCalled();
+      expect(runtime.buildFromTemplate).not.toHaveBeenCalled();
+    }
+  },
+);
+
+test("Windows chrome uses native history, validates requests and refuses subframes", async () => {
+  const runtime = await host(undefined, false, [], { platform: "win32" });
+  runtime.key.resolve(new Uint8Array(32));
+  runtime.ready.resolve(4321);
+  await waitForHost(() => expect(runtime.opened).toHaveBeenCalledOnce());
+  const window = runtime.windows[0]!;
+  const event = {
+    sender: window.webContents,
+    senderFrame: window.webContents.mainFrame,
+  };
+  const read = runtime.handle.mock.calls.find(
+    ([name]) => name === "desktop.navigation",
+  )![1];
+  const navigate = runtime.handle.mock.calls.find(
+    ([name]) => name === "desktop.navigate",
+  )![1];
+  const showMenu = runtime.handle.mock.calls.find(
+    ([name]) => name === "desktop.showMenu",
+  )![1];
+  const controls = runtime.handle.mock.calls.find(
+    ([name]) => name === "desktop.setWindowControls",
+  )![1];
+  expect(read(event)).toEqual({ back: false, forward: false });
+  navigate(event, "back");
+  expect(window.webContents.navigationHistory.goBack).not.toHaveBeenCalled();
+  window.webContents.navigationHistory.canGoBack.mockReturnValue(true);
+  navigate(event, "back");
+  expect(window.webContents.navigationHistory.goBack).toHaveBeenCalledOnce();
+  window.webContents.navigationHistory.canGoForward.mockReturnValue(true);
+  navigate(event, "forward");
+  expect(window.webContents.navigationHistory.goForward).toHaveBeenCalledOnce();
+  window.webContents.emit("did-navigate-in-page", {}, "/app/settings", false);
+  expect(window.webContents.send).not.toHaveBeenCalled();
+  window.webContents.emit("did-navigate-in-page", {}, "/app/settings", true);
+  expect(window.webContents.send).toHaveBeenCalledWith("desktop.navigation", {
+    back: true,
+    forward: true,
+  });
+  await showMenu(event, { id: "edit", x: 123, y: 44 });
+  expect(runtime.popup).toHaveBeenCalledWith({
+    window,
+    x: 123,
+    y: 44,
+    callback: expect.any(Function),
+  });
+  controls(event, { background: "#212121", foreground: "#ffffff", height: 44 });
+  expect(window.setTitleBarOverlay).toHaveBeenCalledWith({
+    color: "#212121",
+    symbolColor: "#ffffff",
+    height: 44,
+  });
+  expect(() => navigate(event, "reload")).toThrow();
+  expect(() => showMenu(event, { id: "unknown", x: 0, y: 0 })).toThrow();
+  expect(() => showMenu(event, { id: "file", x: -1, y: 0 })).toThrow();
+  expect(() =>
+    controls(event, { background: "red", foreground: "#ffffff", height: 0 }),
+  ).toThrow();
+  for (const operation of [read, navigate, showMenu, controls]) {
+    expect(() =>
+      operation({ ...event, senderFrame: { ...event.senderFrame } }),
+    ).toThrow("untrusted frame");
+    expect(() =>
+      operation({ ...event, sender: { mainFrame: event.senderFrame } }),
+    ).toThrow("Windows app window");
+  }
+});
 
 async function connection(switches: readonly string[]) {
   const runtime = await host(undefined, false, switches);

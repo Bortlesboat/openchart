@@ -52,6 +52,7 @@ import {
 import type { AppTransport } from "@openchart/app/lib/transport/transport";
 import {
   localScheduleDateTime,
+  localScheduleTimeZone,
   scheduleFrequencies,
   scheduleRecurrence,
   scheduleTiming,
@@ -226,7 +227,7 @@ function ScheduleEditForm({
         initialRecurrence ?? {
           kind: "cron",
           expression: "0 8 * * *",
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timeZone: localScheduleTimeZone(),
         },
     ),
   );
@@ -484,7 +485,7 @@ function ScheduleTimingFields({
             </Field>
           </FieldGroup>
           <FieldDescription>
-            Local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})
+            Local time ({localScheduleTimeZone()})
           </FieldDescription>
         </Field>
       ) : (

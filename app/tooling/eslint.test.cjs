@@ -58,16 +58,18 @@ function temporaryProject(t) {
   fs.symlinkSync(
     path.join(appDirectory, "node_modules"),
     path.join(directory, "node_modules"),
-    "dir",
+    process.platform === "win32" ? "junction" : "dir",
   );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
 
 function runLint(source) {
+  const npmCli = process.env.npm_execpath;
   const result = spawnSync(
-    "npm",
+    npmCli ? process.execPath : "npm",
     [
+      ...(npmCli ? [npmCli] : []),
       "run",
       "--silent",
       "lint",
@@ -83,6 +85,20 @@ function runLint(source) {
   assert.ifError(result.error);
   return result;
 }
+
+test("authored CSS globs use portable separators and stay inside app source", async () => {
+  const config = await eslint.calculateConfigForFile(probePath);
+  assert.deepEqual(config.settings.tailwindcss.cssFiles, [
+    `${appDirectory.replaceAll(path.sep, "/")}/src/**/*.css`,
+  ]);
+});
+
+test("authored CSS still authorizes custom classes", async () => {
+  const result = await lint(
+    'export const Probe = () => <div className="toaster" />;\n',
+  );
+  assert.deepEqual(result.messages, []);
+});
 
 test("generated build CSS cannot whitelist an invalid utility", async (t) => {
   const directory = temporaryProject(t);

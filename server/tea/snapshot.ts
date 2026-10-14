@@ -1,5 +1,32 @@
-// Purpose: Preserve compiled Workspace source keys as portable, relative snapshot paths.
+// Purpose: Convert between portable snapshot keys and native Tea compiler filenames.
 import path from "node:path";
+import type { SnapshotSources } from "@openchart/tea";
+
+/**
+ * Supplies an in-memory snapshot to Tea's host-native import resolver. Both the
+ * entry and imported filenames are normalized with the same native path rules;
+ * the caller's portable snapshot keys and texts remain unchanged. Every import
+ * is supplied from the snapshot, so missing imports never fall back to disk.
+ * Throws when the snapshot omits its entry. This pure operation owns no files,
+ * handles or cleanup; callers validate the shared snapshot schema first.
+ *
+ * @example compileToProgram([compilerSource(snapshot)], errors);
+ */
+export function compilerSource(snapshot: SnapshotSources) {
+  const source = snapshot.sources[snapshot.entry];
+  if (source === undefined)
+    throw new Error("Tea snapshot is missing its entry");
+  return {
+    filename: path.normalize(snapshot.entry),
+    source,
+    imports: Object.fromEntries(
+      Object.entries(snapshot.sources).map(([filename, text]) => [
+        path.normalize(filename),
+        text,
+      ]),
+    ),
+  };
+}
 
 /**
  * Projects compiler-owned absolute filenames to snapshot keys using the host's

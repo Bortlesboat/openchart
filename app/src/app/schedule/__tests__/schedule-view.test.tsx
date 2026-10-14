@@ -294,57 +294,75 @@ async function openEditor() {
   return screen.findByRole("textbox", { name: "Prompt" });
 }
 
-test("creates from the empty state through the shared dialog and refreshes the list without running a prompt", async () => {
-  const fixture = setup([]);
-  const user = userEvent.setup();
-  rpc.resources.agent_schedule.create.mutate.mockImplementation(
-    async (input) => {
-      const created = { ...schedule("created"), ...input };
-      fixture.items.push(created);
-      return created;
-    },
-  );
-  await user.click(
-    await screen.findByRole("button", { name: "Create schedule" }),
-  );
-  const dialog = screen.getByRole("dialog", { name: "Create schedule" });
-  const prompt = await within(dialog).findByRole("textbox", { name: "Prompt" });
-  const submit = within(dialog).getByRole("button", {
-    name: "Create schedule",
-  });
-  expect(submit).toBeDisabled();
-  await user.type(within(dialog).getByLabelText("Name"), "Daily research");
-  await user.type(prompt, "Summarize the market");
-  fireEvent.change(within(dialog).getByLabelText("Time", { exact: true }), {
-    target: { value: "09:15" },
-  });
-  await user.click(submit);
-  await screen.findByRole("button", { name: "Daily research" });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(
-    rpc.resources.agent_schedule.create.mutate,
-  ).toHaveBeenCalledExactlyOnceWith({
-    name: "Daily research",
-    recurrence: {
-      kind: "cron",
-      expression: "15 9 * * *",
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    },
-    target: {
-      kind: "agent_prompt",
-      prompt: {
-        agent: "analyst",
-        parts: [{ type: "text", text: "Summarize the market" }],
-        model: { providerID: "codex", modelID: "tier1" },
-        workspaceId: "workspace",
+test.each([false, true])(
+  "creates through the shared dialog without running a prompt (missing system time zone: %s)",
+  async (missingTimeZone) => {
+    if (missingTimeZone) {
+      const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+      const systemZone = vi
+        .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+        .mockImplementation(function (this: Intl.DateTimeFormat) {
+          const options = resolvedOptions.call(this);
+          Reflect.deleteProperty(options, "timeZone");
+          return options;
+        });
+      disposals.push(() => systemZone.mockRestore());
+    }
+    const fixture = setup([]);
+    const user = userEvent.setup();
+    rpc.resources.agent_schedule.create.mutate.mockImplementation(
+      async (input) => {
+        const created = { ...schedule("created"), ...input };
+        fixture.items.push(created);
+        return created;
       },
-    },
-  });
-  expect(rpc.resources.agent_schedule.patch.mutate).not.toHaveBeenCalled();
-  expect(rpc.agent.createSession.mutate).not.toHaveBeenCalled();
-  expect(rpc.agent.prompt.mutate).not.toHaveBeenCalled();
-  expect(rpc.scheduler.runNow.mutate).not.toHaveBeenCalled();
-});
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Create schedule" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Create schedule" });
+    const prompt = await within(dialog).findByRole("textbox", {
+      name: "Prompt",
+    });
+    const submit = within(dialog).getByRole("button", {
+      name: "Create schedule",
+    });
+    expect(submit).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Name"), "Daily research");
+    await user.type(prompt, "Summarize the market");
+    fireEvent.change(within(dialog).getByLabelText("Time", { exact: true }), {
+      target: { value: "09:15" },
+    });
+    await user.click(submit);
+    await screen.findByRole("button", { name: "Daily research" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      rpc.resources.agent_schedule.create.mutate,
+    ).toHaveBeenCalledExactlyOnceWith({
+      name: "Daily research",
+      recurrence: {
+        kind: "cron",
+        expression: "15 9 * * *",
+        timeZone: missingTimeZone
+          ? "UTC"
+          : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      },
+      target: {
+        kind: "agent_prompt",
+        prompt: {
+          agent: "analyst",
+          parts: [{ type: "text", text: "Summarize the market" }],
+          model: { providerID: "codex", modelID: "tier1" },
+          workspaceId: "workspace",
+        },
+      },
+    });
+    expect(rpc.resources.agent_schedule.patch.mutate).not.toHaveBeenCalled();
+    expect(rpc.agent.createSession.mutate).not.toHaveBeenCalled();
+    expect(rpc.agent.prompt.mutate).not.toHaveBeenCalled();
+    expect(rpc.scheduler.runNow.mutate).not.toHaveBeenCalled();
+  },
+);
 
 test("retains a failed creation draft, blocks duplicate saves, and discards it on cancel", async () => {
   setup([]);

@@ -4,7 +4,7 @@ import { Schema } from "effect";
 import { SnapshotSources } from "@openchart/tea";
 import { compileToProgram, Errors } from "tea/compiler";
 import { expect, test } from "vitest";
-import { snapshotSources } from "./snapshot";
+import { compilerSource, snapshotSources } from "./snapshot";
 
 test.each([
   { name: "Windows", root: "C:\\Workspace", paths: win32 },
@@ -32,18 +32,10 @@ test.each([
     });
     expect(snapshot.sources).toEqual(expected);
     const errors = new Errors();
-    const compiled = compileToProgram(
-      [
-        {
-          filename: entry,
-          source: snapshot.sources[entry]!,
-          imports: snapshot.sources,
-        },
-      ],
-      errors,
-    );
+    const compiled = compileToProgram([compilerSource(snapshot)], errors);
     expect(errors.flushErrors()).toEqual([]);
     expect(compiled).toBeDefined();
+    expect(snapshot.sources).toEqual(expected);
   },
 );
 

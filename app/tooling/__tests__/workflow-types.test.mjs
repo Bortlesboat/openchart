@@ -1,6 +1,7 @@
 // Purpose: Exercise bundled SDK types with Monaco's actual TypeScript worker.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 const workerEntry = import.meta
   .resolve("@codingame/monaco-vscode-standalone-typescript-language-features/worker");
@@ -19,7 +20,7 @@ const fileUri = "inmemory:///editor/workspace/research.workflow.ts";
 
 before(async () => {
   server = await createServer({
-    configFile: new URL("../../vite.config.ts", import.meta.url).pathname,
+    configFile: fileURLToPath(new URL("../../vite.config.ts", import.meta.url)),
     server: { middlewareMode: true },
     logLevel: "error",
   });

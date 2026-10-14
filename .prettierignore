@@ -4,6 +4,7 @@ sean_demo/
 common/chart-core-vega/
 server/data/providers/local/logos/assets/
 tmp/
+**/CLAUDE.md
 
 # Generated files and build output.
 **/*.timestamp-*.mjs

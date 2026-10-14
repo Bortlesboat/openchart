@@ -18,6 +18,7 @@ import {
 } from "@testing-library/react";
 import { toast } from "sonner";
 import type { IDockviewPanelProps } from "dockview-react";
+import { URI } from "vscode-uri";
 import { createTransport } from "@openchart/app/lib/transport/transport";
 import {
   workspaceFileQueryOptions,
@@ -823,14 +824,14 @@ test("Finder and default-app actions use the file's absolute path", async () => 
   await menuItems(user);
   await user.click(screen.getByRole("menuitem", { name: "Reveal in Finder" }));
   expect(host.revealPath).toHaveBeenCalledExactlyOnceWith(
-    "/workspace/indicators/rsi.tea",
+    URI.file("/workspace/indicators/rsi.tea").fsPath,
   );
   await menuItems(user);
   await user.click(
     screen.getByRole("menuitem", { name: "Open in default app" }),
   );
   expect(host.openPath).toHaveBeenCalledExactlyOnceWith(
-    "/workspace/indicators/rsi.tea",
+    URI.file("/workspace/indicators/rsi.tea").fsPath,
   );
   cleanup();
 });

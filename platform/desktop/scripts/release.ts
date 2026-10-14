@@ -28,6 +28,7 @@ import {
 } from "./release-artifacts.ts";
 import { verifyNativeFiles } from "./native-files.ts";
 import { windowsSigning } from "./windows-signing.ts";
+import { verifyWindowsRelease } from "./windows-verification.ts";
 import { promisify } from "node:util";
 import { z } from "zod";
 
@@ -264,35 +265,15 @@ async function createWindowsRelease(
     if (signing === "signed") {
       // Squirrel modifies its updater while releasifying. Verify the final payload,
       // not the pre-installer directory containing its unsigned intermediate copy.
-      const verification = await mkdtemp(
-        join(tmpdir(), "openchart-signatures-"),
+      const evidence = await verifyWindowsRelease(
+        packageFile,
+        join(output, installer),
       );
-      try {
-        await run(
-          join(
-            process.env.SystemRoot ?? "C:\\Windows",
-            "System32/WindowsPowerShell/v1.0/powershell.exe",
-          ),
-          [
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:OPENCHART_VERIFY_PACKAGE, $env:OPENCHART_VERIFY_DIRECTORY); $files = @(Get-ChildItem -LiteralPath $env:OPENCHART_VERIFY_DIRECTORY -Recurse -File | Where-Object { $_.Extension -in '.exe','.dll','.node' }); if ($files.Count -eq 0) { throw 'No native payload to verify' }; $files += Get-Item -LiteralPath $env:OPENCHART_VERIFY_INSTALLER; foreach ($file in $files) { if ((Get-AuthenticodeSignature -LiteralPath $file.FullName).Status -ne 'Valid') { throw ('Invalid signature: ' + $file.Name) } }",
-          ],
-          {
-            env: {
-              ...process.env,
-              OPENCHART_VERIFY_PACKAGE: join(output, packageName),
-              OPENCHART_VERIFY_DIRECTORY: verification,
-              OPENCHART_VERIFY_INSTALLER: join(output, installer),
-            },
-            windowsHide: true,
-          },
-        );
-      } finally {
-        await rm(verification, { recursive: true, force: true });
-      }
+      await writeFile(
+        join(output, "WINDOWS-SIGNATURES.json"),
+        `${JSON.stringify(evidence, null, 2)}\n`,
+      );
+      files.push("WINDOWS-SIGNATURES.json");
     }
     await writeBuildReceipt(
       output,

@@ -25,7 +25,8 @@ it("keeps shared RPC, Feed and Tea payloads in their transport owners and erases
     ["src/lib/feed/bars/sharing.ts", ["MutableHashMap", "Option"]],
   ]);
   const load = createRequire(import.meta.url);
-  for await (const file of glob("src/**/*.{ts,tsx}", { cwd: app })) {
+  for await (const filename of glob("src/**/*.{ts,tsx}", { cwd: app })) {
+    const file = filename.replaceAll("\\", "/");
     if (/\.test(?:-utils)?\.tsx?$/.test(file)) continue;
     const source = await readFile(resolve(app, file), "utf8");
     // Drawing boundaries decode shared input with Schema; no Effect runtime in components.

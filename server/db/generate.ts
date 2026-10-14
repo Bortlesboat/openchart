@@ -148,7 +148,10 @@ async function check(): Promise<void> {
     const expectedSchema = await formatTypescript(
       renderSchema(await generatedSql(full)),
     );
-    if ((await fs.readFile(schemaPath, "utf8")) !== expectedSchema) {
+    if (
+      (await fs.readFile(schemaPath, "utf8")).replaceAll("\r\n", "\n") !==
+      expectedSchema.replaceAll("\r\n", "\n")
+    ) {
       throw new Error(
         "The generated full schema is stale. Run `just migration <name>` from v2/.",
       );
@@ -157,7 +160,10 @@ async function check(): Promise<void> {
     const expectedRegistry = await formatTypescript(
       renderRegistry(await typescriptMigrations()),
     );
-    if ((await fs.readFile(registryPath, "utf8")) !== expectedRegistry) {
+    if (
+      (await fs.readFile(registryPath, "utf8")).replaceAll("\r\n", "\n") !==
+      expectedRegistry.replaceAll("\r\n", "\n")
+    ) {
       throw new Error(
         "The generated migration registry is stale. Run `just migration <name>` from v2/.",
       );

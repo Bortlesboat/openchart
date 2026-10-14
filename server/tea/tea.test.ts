@@ -962,7 +962,7 @@ it("never reads the disk for relative imports in inline source", async () => {
     }
     // Compilation reads Tea's shipped libraries, never a user file.
     expect(
-      teaReads().filter(([path]) => !String(path).includes("/tea-lib/")),
+      teaReads().filter(([path]) => !/[\\/]tea-lib[\\/]/.test(String(path))),
     ).toEqual([]);
     // Control: the spy sees the loader, and registry libraries still load. Its
     // adjacent comments would stall a guard whose comment match can regroup.
@@ -970,7 +970,9 @@ it("never reads the disk for relative imports in inline source", async () => {
     await compile(`import ${"/**/".repeat(30)}trade\nemit "price" close`);
     expect(performance.now() - started).toBeLessThan(5_000);
     expect(teaReads().map(([path]) => String(path))).toEqual(
-      expect.arrayContaining([expect.stringMatching(/tea-lib\/trade\.tea$/)]),
+      expect.arrayContaining([
+        expect.stringMatching(/tea-lib[\\/]trade\.tea$/),
+      ]),
     );
   } finally {
     reads.mockRestore();

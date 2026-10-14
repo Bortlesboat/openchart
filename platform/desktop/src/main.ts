@@ -11,6 +11,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   net,
   Notification,
   session,
@@ -19,6 +20,7 @@ import {
 } from "electron";
 import { updateElectronApp, UpdateSourceType } from "update-electron-app";
 import { notificationSounds } from "@openchart/notification";
+import { communityUrls } from "@openchart/app/app/community-urls";
 import { z } from "zod";
 
 import { origin, resolveAsset } from "./assets";
@@ -219,7 +221,13 @@ function start(): void {
       minHeight: 600,
       show: false,
       // Let the page fill the top of the Mac window, keeping Apple's three buttons.
-      titleBarStyle: hostPlatform === "darwin" ? "hiddenInset" : "default",
+      titleBarStyle:
+        hostPlatform === "darwin"
+          ? "hiddenInset"
+          : hostPlatform === "win32"
+            ? "hidden"
+            : "default",
+      titleBarOverlay: hostPlatform === "win32" ? true : undefined,
       trafficLightPosition:
         hostPlatform === "darwin" ? { x: 20, y: 23 } : undefined,
       webPreferences: {
@@ -232,6 +240,22 @@ function start(): void {
         webviewTag: false,
       },
     });
+    if (hostPlatform === "win32") {
+      window.setMenuBarVisibility(false);
+      const publishNavigation = () => {
+        window.webContents.send("desktop.navigation", {
+          back: window.webContents.navigationHistory.canGoBack(),
+          forward: window.webContents.navigationHistory.canGoForward(),
+        });
+      };
+      window.webContents.on("did-navigate", publishNavigation);
+      window.webContents.on(
+        "did-navigate-in-page",
+        (_event, _url, isMainFrame) => {
+          if (isMainFrame) publishNavigation();
+        },
+      );
+    }
     window.on("page-title-updated", (event) => event.preventDefault());
     window.webContents.on("will-prevent-unload", (event) => {
       const discard = dialog.showMessageBoxSync(window, {
@@ -303,6 +327,30 @@ function start(): void {
       // Electron must be ready before we use windows or OS-protected storage.
       .whenReady()
       .then(async () => {
+        const windowMenu =
+          hostPlatform === "win32"
+            ? Menu.buildFromTemplate([
+                {
+                  id: "file",
+                  label: "&File",
+                  submenu: [{ role: "close" }, { role: "quit" }],
+                },
+                { id: "edit", label: "&Edit", role: "editMenu" },
+                { id: "view", label: "&View", role: "viewMenu" },
+                {
+                  id: "help",
+                  label: "&Help",
+                  role: "help",
+                  submenu: [
+                    {
+                      label: "OpenChart on GitHub",
+                      click: () => openExternal(communityUrls.github),
+                    },
+                  ],
+                },
+              ])
+            : undefined;
+        if (windowMenu) Menu.setApplicationMenu(windowMenu);
         if (hostPlatform === "win32")
           Notification.handleActivation(() => {
             void activateNotification().catch(fail);
@@ -361,6 +409,20 @@ function start(): void {
               ? developmentTestAccount
               : undefined,
           initialLocalStorage: onboarding?.localStorage,
+          notificationGuide:
+            hostPlatform === "darwin"
+              ? "macos"
+              : hostPlatform === "win32"
+                ? "windows"
+                : undefined,
+          windowChrome: windowMenu
+            ? {
+                menus: windowMenu.items.map(({ id, label }) => ({
+                  id,
+                  label: label.replaceAll("&", ""),
+                })),
+              }
+            : undefined,
         };
         function assertTrustedFrame(event: Electron.IpcMainInvokeEvent): void {
           const frame = event.senderFrame;
@@ -376,6 +438,60 @@ function start(): void {
         ipcMain.handle("desktop.connection", (event) => {
           assertTrustedFrame(event);
           return connection;
+        });
+        function chromeWindow(
+          event: Electron.IpcMainInvokeEvent,
+        ): BrowserWindow {
+          assertTrustedFrame(event);
+          const window = BrowserWindow.fromWebContents(event.sender);
+          if (!window || !windowMenu)
+            throw new Error("Window chrome requires a Windows app window");
+          return window;
+        }
+        ipcMain.handle("desktop.navigation", (event) => {
+          const window = chromeWindow(event);
+          return {
+            back: window.webContents.navigationHistory.canGoBack(),
+            forward: window.webContents.navigationHistory.canGoForward(),
+          };
+        });
+        ipcMain.handle("desktop.navigate", (event, input: unknown) => {
+          const window = chromeWindow(event);
+          const direction = z.enum(["back", "forward"]).parse(input);
+          const history = window.webContents.navigationHistory;
+          if (direction === "back" && history.canGoBack()) history.goBack();
+          if (direction === "forward" && history.canGoForward())
+            history.goForward();
+        });
+        ipcMain.handle("desktop.showMenu", (event, input: unknown) => {
+          const window = chromeWindow(event);
+          const { id, x, y } = z
+            .strictObject({
+              id: z.enum(["file", "edit", "view", "help"]),
+              x: z.number().int().min(0).max(10_000),
+              y: z.number().int().min(0).max(10_000),
+            })
+            .parse(input);
+          const menu = windowMenu?.getMenuItemById(id)?.submenu;
+          if (!menu) throw new Error("Native menu is unavailable");
+          return new Promise<void>((resolve) => {
+            menu.popup({ window, x, y, callback: resolve });
+          });
+        });
+        ipcMain.handle("desktop.setWindowControls", (event, input: unknown) => {
+          const window = chromeWindow(event);
+          const { background, foreground, height } = z
+            .strictObject({
+              background: z.string().regex(/^#[\da-f]{6}$/i),
+              foreground: z.string().regex(/^#[\da-f]{6}$/i),
+              height: z.number().int().min(28).max(80),
+            })
+            .parse(input);
+          window.setTitleBarOverlay({
+            color: background,
+            symbolColor: foreground,
+            height,
+          });
         });
         ipcMain.handle("desktop.pickDirectory", async (event) => {
           assertTrustedFrame(event);

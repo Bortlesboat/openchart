@@ -21,6 +21,11 @@ export type ScheduleTiming = {
   date: string;
 };
 
+/** Read the runtime's named time zone, falling back to UTC when it reports none. New drafts use this value; saved recurrence zones stay unchanged. This reads no application state and retains no resources. @example localScheduleTimeZone(); */
+export function localScheduleTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 /** Format a local date for the native date/time field, without UTC conversion. @example localScheduleDateTime(new Date()); */
 export function localScheduleDateTime(date: Date) {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -35,7 +40,7 @@ export function scheduleTiming(
     frequency: "once",
     time: "08:00",
     day: "1",
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timeZone: localScheduleTimeZone(),
     expression: "0 8 * * 1-5",
     date: "",
   };

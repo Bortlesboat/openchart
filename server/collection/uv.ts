@@ -29,6 +29,15 @@ export const UV_MANIFEST = {
       layout: "flat",
       executable: "uv-x86_64-apple-darwin/uv",
     },
+    "win32-x64": {
+      version: "0.12.0",
+      url: "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-pc-windows-msvc.zip",
+      integrity:
+        "sha512-NPPs07evZy5vWSerX279DDQ4blCYBcLjySsMfpcQH6IpgEeJ5d268WKSSZS710PAxCB8C/AAriBkXLkOvxiCjg==",
+      layout: "flat",
+      archive: "zip",
+      executable: "uv.exe",
+    },
   },
 } as const;
 
@@ -37,8 +46,10 @@ const tail = (text: string) =>
 
 /**
  * Installs the pinned uv under `runtimes` unless it is already there, without
- * output; returns its executable. Concurrent first runs share the installer's
- * atomic rename.
+ * output; returns its app-owned executable. The caller owns the runtime directory's
+ * lifetime. Concurrent first runs share the installer's atomic rename; incomplete
+ * downloads are cleaned by the installer. Unsupported hosts, download, checksum,
+ * extraction and version errors fail `ScriptFailed` without publishing a runtime.
  * @example const uv = yield* installUv(runtimes);
  */
 export const installUv = Effect.fn("Collection.installUv")(function* (
@@ -116,6 +127,7 @@ export const runScript = Effect.fn("Collection.runScript")(function* (input: {
           signal,
           timeout: input.timeoutSeconds * 1000,
           maxBuffer: 8 * 1024 * 1024,
+          windowsHide: true,
           env: {
             ...environment,
             PYTHONSAFEPATH: "1",

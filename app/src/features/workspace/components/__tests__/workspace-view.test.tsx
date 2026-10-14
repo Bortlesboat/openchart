@@ -21,6 +21,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DockviewReadyEvent } from "dockview-react";
+import { URI } from "vscode-uri";
 import { createTransport } from "@openchart/app/lib/transport/transport";
 import { UnsavedChangesProvider } from "@openchart/app/lib/unsaved-changes/unsaved-changes";
 import { AppHostProvider, type AppHost } from "@openchart/app/lib/host/host";
@@ -774,7 +775,7 @@ test("the switcher reveals the workspace folder in Finder", async () => {
     await screen.findByRole("menuitem", { name: "Reveal in Finder" }),
   );
   expect(appHost.revealPath).toHaveBeenCalledExactlyOnceWith(
-    "/workspaces/default",
+    URI.file("/workspaces/default").fsPath,
   );
 });
 

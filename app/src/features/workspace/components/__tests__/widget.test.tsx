@@ -11,6 +11,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import type { DockviewReadyEvent } from "dockview-react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { workspaceWidget } from "@openchart/app/features/workspace/components/widget";
+import "@openchart/app/features/workspace/components/workspace-view";
 import { AppHostProvider } from "@openchart/app/lib/host/host";
 import { testAppHost } from "@openchart/app/testing/test-utils";
 import type { AppTransport } from "@openchart/app/lib/transport/transport";
@@ -127,6 +128,9 @@ test("opens requested files in its own placement once, including before mount an
   let router = route();
   let view = mount(router);
   try {
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
     // The lazily imported view's first load can outlast waitFor's 1s default.
     await waitFor(
       () =>

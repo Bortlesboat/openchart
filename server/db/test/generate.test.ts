@@ -86,10 +86,12 @@ test("compiles Resource schemas into migration, schema, and registry", async () 
   await symlink(
     resolve(import.meta.dirname, "../../node_modules"),
     resolve(server, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
   );
   await symlink(
     resolve(import.meta.dirname, "../../../node_modules"),
     resolve(temporary, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
   );
   // Prove that the generator reads its workspace policy, rather than hardcoded defaults.
   await writeFile(

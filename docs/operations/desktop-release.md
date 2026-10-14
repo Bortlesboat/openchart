@@ -17,6 +17,11 @@ also need Git Bash's `sh` on PATH. Enable `git config --global core.longpaths tr
 before checkout on Windows. `just install --frozen-lockfile` builds the pinned
 public Tea submodule before installing workspaces.
 
+On Windows, enable Developer Mode before `just check` so the file-symlink security
+tests can create their fixtures without an elevated terminal. Directory-link tests
+use Windows junctions. Keep file-symlink checks enabled; junctions and hard links
+are not substitutes for file symlinks.
+
 Signed Mac releases require full Xcode, Longsurf's **Developer ID Application**
 certificate and private key, and the `openchart-notary` Keychain profile. Keep
 `ai.longsurf.openchart` and the signing team stable. Configure a new profile with
@@ -29,6 +34,20 @@ The hook follows `@electron/windows-sign`'s `hookModulePath` contract. Signing
 configuration is shared by Electron Packager and Squirrel. Keep credentials and
 hooks outside the repository. The Squirrel package ID `OpenChart` is permanent.
 The checked-in CI lane builds unsigned installers without signing credentials.
+Packager and Squirrel share the pinned Windows signer: a hook failure must abort
+signing immediately, never silently continue with an unsigned file.
+
+For [Azure Artifact Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations),
+wait for identity validation to complete, create a Public Trust certificate
+profile, and assign Certificate Profile Signer at that profile's scope. The
+operator-owned hook needs a compatible SignTool, the signing dlib and .NET 8.
+Use SHA-256 and Microsoft's RFC 3161 timestamp service; verify Authenticode trust
+and the timestamp after signing each file. Cloud setup alone is not a signed build.
+Preserve valid third-party signatures in the hook. Set `OPENCHART_WINDOWS_SIGNTOOL`
+to an absolute compatible SignTool path to run `/pa /all /v /tw` on every final
+native file. Signed releases require timestamped trust and the Longsurf publisher
+on the application, updater and installer; `WINDOWS-SIGNATURES.json` records their
+public certificate evidence before checksums are generated.
 
 The checked-in `app/.env.production` supplies the public Clerk live key. The build
 environment or `app/.env.production.local` can override it. Google OAuth secrets
@@ -107,6 +126,7 @@ Each finished target directory is `platform/desktop/out/release/<version>/<targe
 | `SHA256SUMS`                              | Checksums for downloads and feed manifest                      |
 | `SOURCE`                                  | Full source commit                                             |
 | `BUILD.json`                              | Target, source, signing, builder, toolchain and file inventory |
+| `WINDOWS-SIGNATURES.json`                 | Final Windows publisher, timestamp and verification evidence   |
 
 Only platform-appropriate downloads appear in each directory. The directory is
 exposed after verification succeeds and is never overwritten. Retain it exactly;
@@ -136,6 +156,8 @@ be recorded as such. Smoke results and screenshots live under
 
 On Windows, `just desktop-windows-probe` checks the pinned Antigravity CLI's
 authorization URL and code prompt under real ConPTY without authenticating.
+The isolated fixture selects the CLI's remote-session login flow so it prints
+the prompt without opening a browser or leaving a browser-owned profile locked.
 `terminalExitObserved` proves that the native exit callback fired, not that all
 internal PTY resources were released. Local use removes the fixture after the
 Vitest process exits: whole-removal retries have one 10-second window and a

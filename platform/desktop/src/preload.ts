@@ -2,6 +2,7 @@
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { exposeClerkBridge } from "@clerk/electron/preload";
+import type { WindowChrome } from "@openchart/app/lib/host/host";
 
 exposeClerkBridge();
 
@@ -47,6 +48,36 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   /** Asks main to quit normally and install the downloaded update. */
   restartToUpdate: () => ipcRenderer.invoke("desktop.restartToUpdate"),
-  /** Asks main to show the notification that lets macOS ask for permission. */
+  /** Asks main to send a sample notification using the system's current settings. */
   enableNotifications: () => ipcRenderer.invoke("desktop.enableNotifications"),
+  navigate: (direction: "back" | "forward") =>
+    ipcRenderer.invoke("desktop.navigate", direction),
+  showMenu: (menu: Parameters<WindowChrome["showMenu"]>[0]) =>
+    ipcRenderer.invoke("desktop.showMenu", menu),
+  setWindowControls: (controls: Parameters<WindowChrome["setControls"]>[0]) =>
+    ipcRenderer.invoke("desktop.setWindowControls", controls),
+  onNavigationChange: (
+    listener: Parameters<WindowChrome["onNavigationChange"]>[0],
+    onError: (error: Error) => void,
+  ) => {
+    let active = true;
+    const receive = (
+      _event: IpcRendererEvent,
+      state: { back: boolean; forward: boolean },
+    ) => listener(state);
+    ipcRenderer.on("desktop.navigation", receive);
+    void ipcRenderer.invoke("desktop.navigation").then(
+      (state: { back: boolean; forward: boolean }) => {
+        if (active) listener(state);
+      },
+      (cause: unknown) => {
+        if (active)
+          onError(cause instanceof Error ? cause : new Error(String(cause)));
+      },
+    );
+    return () => {
+      active = false;
+      ipcRenderer.removeListener("desktop.navigation", receive);
+    };
+  },
 });

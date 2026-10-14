@@ -33,7 +33,7 @@ test.runIf(Boolean(process.env.OPENCHART_UV_LIVE))(
         "import os",
         "from dateutil.parser import isoparse",
         'day = isoparse("2024-01-01").date().isoformat()',
-        'open(os.environ["OPENCHART_OUTPUT"], "w").write(f"date,cpi\\n{day},308.4\\n")',
+        'open(os.environ["OPENCHART_OUTPUT"], "w", newline="").write(f"date,cpi\\n{day},308.4\\n")',
         "",
       ].join("\n"),
     );

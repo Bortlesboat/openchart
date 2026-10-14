@@ -1,4 +1,5 @@
 // Purpose: Verifies native discovery, selection, refresh, and scope-owned binding lifetimes.
+import { join, sep } from "node:path";
 import {
   ANTIGRAVITY,
   CLAUDE_CODE,
@@ -147,7 +148,7 @@ test("constructs both bindings lazily without discovery and borrows the SDK with
   ] as const) {
     expect(create).toHaveBeenCalledExactlyOnceWith(
       f.catalog,
-      expect.stringContaining(`/unused/providers/${id}/`),
+      expect.stringContaining(join("/unused/providers", id) + sep),
     );
   }
   for (let i = 0; i < 2; i++) {

@@ -284,7 +284,7 @@ test("resolves relative paths from the executing Assistant and retains file impo
   await writeFile(join(f.root, "main.tea"), 'emit "value" no_such_name');
   expect(
     JSON.stringify((await f.check({ path: "main.tea" })).output),
-  ).toContain(`${join(f.root, "main.tea")}:1:`);
+  ).toContain(JSON.stringify(`${join(f.root, "main.tea")}:1:`).slice(1, -1));
   expect(
     (await f.check({ path: join(f.root, "missing.tea") })).output,
   ).toMatchObject({ value: { status: "rejected", code: "compile_failed" } });

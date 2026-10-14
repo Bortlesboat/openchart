@@ -32,7 +32,7 @@ import {
   type NodeGraph,
 } from "./node-graph";
 import { run } from "./run";
-import { snapshotSources } from "./snapshot";
+import { compilerSource, snapshotSources } from "./snapshot";
 
 export * from "@openchart/tea";
 
@@ -208,11 +208,7 @@ export const layer = Layer.effect(
             [
               fromWorkspace
                 ? join(root!, request.path)
-                : {
-                    filename: request.entry,
-                    source: request.sources[request.entry]!,
-                    imports: request.sources,
-                  },
+                : compilerSource(request),
             ],
             errors,
             { includeSources: true },

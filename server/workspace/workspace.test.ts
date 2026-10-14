@@ -13,7 +13,7 @@ import {
   truncate,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { FSWatcher } from "chokidar";
 import { Deferred, Effect, FileSystem, Stream } from "effect";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -309,7 +309,11 @@ test("rejects path escapes and symlink traversal at every file access", async ()
   const outside = join(home, "outside");
   await mkdir(outside);
   await writeFile(join(outside, "secret.tea"), "outside");
-  await symlink(outside, join(workspace.root, "linked"));
+  await symlink(
+    outside,
+    join(workspace.root, "linked"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   for (const path of [
     "../outside/secret.tea",
     "/secret.tea",
@@ -439,9 +443,17 @@ test("mkdir rejects escapes, hidden paths, symlinks and files without overwritin
   const workspaceId = record.id;
   const outside = join(home, "outside");
   await mkdir(outside);
-  await symlink(outside, join(record.root, "linked"));
+  await symlink(
+    outside,
+    join(record.root, "linked"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   await mkdir(join(record.root, "real"));
-  await symlink(join(record.root, "real"), join(record.root, "alias"));
+  await symlink(
+    join(record.root, "real"),
+    join(record.root, "alias"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   await mkdir(join(record.root, ".hidden"));
   await writeFile(join(record.root, "existing.tea"), "keep");
   for (const path of [
@@ -640,7 +652,11 @@ test("default recovery rejects a symlink and recreates the directory once it is 
   await mkdir(outside);
   await writeFile(join(outside, "outside.tea"), "outside");
   await rename(root, join(home, "old-default"));
-  await symlink(outside, root);
+  await symlink(
+    outside,
+    root,
+    process.platform === "win32" ? "junction" : "dir",
+  );
   await expect
     .poll(
       async () => (await client.workspace.listTree({ workspaceId })).status,
@@ -759,7 +775,7 @@ test("shutdown waits for an admitted save, then closes old handles", async () =>
 
 test("creates unnamed home workspaces through the same immutable registry", async () => {
   const record = await client.resources.workspace.createLocal();
-  expect(record.root.startsWith(join(home, "workspaces") + "/")).toBe(true);
+  expect(record.root.startsWith(join(home, "workspaces") + sep)).toBe(true);
   const entry = await client.workspace.write({
     workspaceId: record.id,
     path: "local.tea",

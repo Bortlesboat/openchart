@@ -38,8 +38,10 @@ import type {
 } from "@openchart/app/lib/transport/transport";
 
 import { useAppHost } from "@openchart/app/lib/host/host";
+import { cn } from "@openchart/app/utils/cn";
 
 import { LeftSidebar } from "./left-sidebar";
+import { AppWindowFrame } from "./window-header";
 import { usePineConversionOnboarding } from "./onboarding";
 import { OnboardingHost } from "./trellis/host";
 import { useOnboardingProgress } from "./trellis/progress";
@@ -229,29 +231,34 @@ export function AppLayout({
   const { services, connectionError, attempt, reconnect } =
     useBackendConnection(connection);
   const context = AuiConfig({ modelContext: ModelContextClient() });
+  const { windowChrome } = useAppHost();
   return (
     <AuiProvider config={context}>
-      <SidebarProvider className="jan-workspace relative">
-        {services ? (
-          <TeaClientContext.Provider value={services.tea}>
-            <ConfiguredTheme
-              transport={services.transport}
-              initialTheme={initialTheme}
-            />
-            <AccountConnectionProvider transport={services.transport}>
-              <AppLayoutContent
-                key={attempt}
+      <SidebarProvider
+        className={cn("jan-workspace relative", windowChrome && "flex-col")}
+      >
+        <AppWindowFrame>
+          {services ? (
+            <TeaClientContext.Provider value={services.tea}>
+              <ConfiguredTheme
                 transport={services.transport}
-                connectionError={connectionError}
-                reconnect={reconnect}
+                initialTheme={initialTheme}
               />
-            </AccountConnectionProvider>
-          </TeaClientContext.Provider>
-        ) : (
-          <p className="m-auto text-sm text-muted-foreground" role="status">
-            Opening workspace…
-          </p>
-        )}
+              <AccountConnectionProvider transport={services.transport}>
+                <AppLayoutContent
+                  key={attempt}
+                  transport={services.transport}
+                  connectionError={connectionError}
+                  reconnect={reconnect}
+                />
+              </AccountConnectionProvider>
+            </TeaClientContext.Provider>
+          ) : (
+            <p className="m-auto text-sm text-muted-foreground" role="status">
+              Opening workspace…
+            </p>
+          )}
+        </AppWindowFrame>
       </SidebarProvider>
     </AuiProvider>
   );

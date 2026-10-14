@@ -1,10 +1,12 @@
 // Purpose: Build the host, backend, preload and shared renderer bundles, run Electron with Vite, and package only generated desktop files.
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { cp, glob, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packager } from "@electron/packager";
@@ -381,10 +383,11 @@ async function packageApplication(
       : {}),
     // Packager clears its temporary root; isolate worktrees and release versions.
     tmpdir: join(
-      directory,
-      ".artifacts/packager",
+      tmpdir(),
+      "openchart-packager",
       development ? "development" : metadata.version,
       target ?? `${process.platform}-${process.arch}`,
+      randomUUID(),
     ),
     out: join(
       directory,

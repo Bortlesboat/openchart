@@ -14,11 +14,16 @@ import {
   waitFor,
 } from "@openchart/app/testing/test-utils";
 
-function mount(enableNotifications: AppHost["enableNotifications"]) {
+function mount(
+  enableNotifications: AppHost["enableNotifications"],
+  notificationGuide: AppHost["notificationGuide"] = "macos",
+) {
   const onDone = vi.fn();
   renderWithToaster(
     <StrictMode>
-      <AppHostProvider value={testAppHost({ enableNotifications })}>
+      <AppHostProvider
+        value={testAppHost({ enableNotifications, notificationGuide })}
+      >
         <NotificationsPage transport={{} as AppTransport} onDone={onDone} />
       </AppHostProvider>
     </StrictMode>,
@@ -37,6 +42,25 @@ test("opening the page asks Desktop once, and Continue moves on without asking a
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
   expect(onDone).toHaveBeenCalledOnce();
   expect(enableNotifications).toHaveBeenCalledOnce();
+});
+
+test("Windows explains system settings without the macOS permission video or prompt", async () => {
+  const enableNotifications = vi.fn(async () => {});
+  const onDone = mount(enableNotifications, "windows");
+
+  const dialog = screen.getByRole("dialog", { name: "Turn on notifications" });
+  expect(dialog).toHaveTextContent(
+    "Windows shows these in Notification Center.",
+  );
+  expect(dialog).toHaveTextContent("Settings → System → Notifications");
+  expect(dialog).not.toHaveTextContent("macOS");
+  expect(dialog.querySelector("video")).toBeNull();
+  await waitFor(() => expect(enableNotifications).toHaveBeenCalledOnce());
+  await userEvent.click(
+    screen.getByRole("button", { name: "Send another test notification" }),
+  );
+  expect(enableNotifications).toHaveBeenCalledTimes(2);
+  expect(onDone).not.toHaveBeenCalled();
 });
 
 test("a missed prompt can be asked for again without leaving the page", async () => {

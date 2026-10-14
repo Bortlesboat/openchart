@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.1.20",
+    "date": "2026-10-14",
+    "items": [
+      "OpenChart now has installers for Intel Macs and Windows PCs.",
+      "Windows supports Antigravity sign-in and OpenChart tools.",
+      "Fixed Antigravity installation getting stuck after a file error on Windows.",
+      "Windows has native menus, window controls and notification guidance.",
+      "Agent transcript reads show concise pointers to nested conversations.",
+      "Workspace Dataset scripts now run on Windows."
+    ]
+  },
+  {
     "version": "0.1.19",
     "date": "2026-10-13",
     "items": [

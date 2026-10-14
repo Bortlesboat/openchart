@@ -15,7 +15,7 @@ const guide = readFileSync(
 test("the Tea guide's JSON examples decode with the real schemas and match the tools' example", () => {
   // In order: the config, Samples rows, and a save_alert_rule value.
   const [config, rows, value] = [
-    ...guide.matchAll(/^```json\n([\s\S]*?)^```$/gm),
+    ...guide.matchAll(/^```json\r?\n([\s\S]*?)^```\r?$/gm),
   ].map(([, json]) => JSON.parse(json!) as unknown);
   expect(config).toEqual(teaConfigExample);
   Schema.decodeUnknownSync(Tea.NodeConfig)(config);

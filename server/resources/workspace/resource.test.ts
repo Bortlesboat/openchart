@@ -90,7 +90,11 @@ test("canonicalizes an existing directory and rejects duplicate aliases and over
   const sibling = `${root}-other`;
   await mkdir(child, { recursive: true });
   await mkdir(sibling);
-  await symlink(root, path.join(directory, "alias"));
+  await symlink(
+    root,
+    path.join(directory, "alias"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
   const results = await Promise.allSettled([register(root), register(child)]);
   expect(
     results.filter((result) => result.status === "fulfilled"),

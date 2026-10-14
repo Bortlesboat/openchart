@@ -30,6 +30,16 @@ dev/build/package commands, and `tests/smoke.ts` verifies a packaged executable.
 `dist/` and `out/` contain generated artifacts; `.artifacts/` holds smoke-test
 results.
 
+Windows uses an integrated app header with native caption buttons through
+Electron's hidden title bar and window-controls overlay. Desktop owns one native
+File/Edit/View/Help menu and supplies its labels, popup operations and navigation
+history through optional `AppHost.windowChrome`. The app composes the header with
+the existing SidebarProvider; hosts without this capability keep their layout.
+Caption colors come from the applied CSS theme, converted to sRGB by the renderer,
+not a second palette. Main validates every chrome request and its owning frame.
+Overlay CSS reserves the system-button area; only empty header space is draggable.
+macOS retains its hidden-inset title bar and native traffic lights unchanged.
+
 One `tsconfig.json` covers the host, renderer, tooling and tests. It inherits
 the shared OpenChart compiler rules and app aliases from `tsconfig.json`, adding
 only DOM libraries, Node/Vite types and local file selection. Editors and
@@ -159,7 +169,9 @@ Desktop's shared target definition. Both Mac targets can be built on either
 Mac architecture; Windows installers require a Windows host. The production app
 is at `platform/desktop/out/<version>/OpenChart-<target>/`, with `OpenChart.app`
 on Mac and `OpenChart.exe` on Windows. Packager temporary directories are isolated
-per target. The staged JavaScript is target-neutral; native files are rejected
+per target and invocation under the OS temporary directory, outside the watched
+checkout. A retry never clears another invocation's temporary files. The staged
+JavaScript is target-neutral; native files are rejected
 unless explicitly owned by Windows' unpacked `node-pty` dependency.
 
 Mac development packages are ad-hoc signed for local execution. Hardened runtime

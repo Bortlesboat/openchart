@@ -1,4 +1,4 @@
-/* Purpose: Fit the shared app around macOS window buttons and make headers draggable. */
+/* Purpose: Fit the shared app around native window controls and make headers draggable. */
 
 .desktop-macos .jan-workspace .jan-chat-header,
 .desktop-macos .jan-workspace [data-sidebar="header"] > div:first-child {
@@ -24,6 +24,55 @@
   .jan-workspace
   :is(.jan-chat-header, [data-sidebar="header"])
   :is(button, a, input) {
+  app-region: no-drag;
+}
+
+.desktop-windows [data-window-header] {
+  app-region: drag;
+}
+
+.desktop-windows [data-window-header-controls] {
+  margin-left: env(titlebar-area-x, 0px);
+  max-width: env(titlebar-area-width, 100%);
+}
+
+.desktop-windows [data-window-header] button {
+  app-region: no-drag;
+}
+
+.desktop-windows
+  .jan-workspace
+  :is(.jan-chat-header, [data-sidebar="header"])
+  [data-sidebar="trigger"] {
+  display: none;
+}
+
+.desktop-windows .jan-workspace > [data-window-content] {
+  position: relative;
+}
+
+/* The flex content area already excludes the header. Keep the navigation panel
+   and routed pages inside that area without repeating the header's height. */
+.desktop-windows .jan-workspace > [data-window-content] > main {
+  min-height: 0;
+}
+
+.desktop-windows .jan-workspace > [data-window-content] > main > .h-dvh {
+  height: 100%;
+}
+
+.desktop-windows
+  .jan-workspace
+  > [data-window-content]
+  > [data-side]
+  > div:has(> [data-sidebar="sidebar"]) {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.desktop-windows
+  :is([role="dialog"], [role="alertdialog"], [data-slot="floating-viewer"]) {
   app-region: no-drag;
 }
 

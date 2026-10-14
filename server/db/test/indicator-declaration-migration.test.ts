@@ -1,5 +1,6 @@
 // Purpose: Moves saved Indicators' `// @indicator` comments to a leading indicator() declaration once, touching nothing else.
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import { normalize, sep } from "node:path";
 import { sql } from "drizzle-orm";
 import { makeWithDefaults } from "drizzle-orm/effect-sqlite-node";
 import { Cause, Effect, Exit, Schema } from "effect";
@@ -150,16 +151,28 @@ test("moves each entry's @indicator header to a leading indicator() declaration 
         const compiled = compileToProgram(
           [
             {
-              filename: scriptPath,
+              filename: normalize(scriptPath),
               source: row.snapshot[scriptPath]!,
-              imports: row.snapshot,
+              imports: Object.fromEntries(
+                Object.entries(row.snapshot).map(([filename, text]) => [
+                  normalize(filename),
+                  text,
+                ]),
+              ),
             },
           ],
           errors,
           { includeSources: true },
         );
         expect(errors.flushErrors()).toEqual([]);
-        expect(compiled?.sources).toEqual(row.snapshot);
+        expect(
+          Object.fromEntries(
+            Object.entries(compiled!.sources).map(([filename, text]) => [
+              filename.split(sep).join("/"),
+              text,
+            ]),
+          ),
+        ).toEqual(row.snapshot);
         // The header's timeframe defaults to "", the chart's bars.
         expect(compiled?.program.declaration).toEqual({
           kind: "indicator",

@@ -126,6 +126,7 @@ test.skipIf(
         if (/^(GOOGLE_|GEMINI_|ANTIGRAVITY_|AGY_)/.test(key))
           vi.stubEnv(key, undefined);
       }
+      vi.stubEnv("SSH_CONNECTION", "127.0.0.1 49152 127.0.0.1 22");
       const installations = createInstallations(
         path.join(directory, "model-providers"),
       );

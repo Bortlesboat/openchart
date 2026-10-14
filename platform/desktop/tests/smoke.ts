@@ -142,6 +142,13 @@ const processErrors: string[] = [];
 let application: ElectronApplication | undefined;
 let passed = false;
 let packagedConpty: boolean | null = null;
+const credentialProtection: {
+  keyFingerprint?: string;
+  windows?: {
+    encryptedWithSafeStorage: boolean;
+    keyRestoredOnRestart: boolean;
+  };
+} = {};
 const nativeState = join(profile, "native-state");
 const nativeBin = join(profile, "bin");
 
@@ -625,6 +632,19 @@ async function launch(): Promise<Page> {
     development ? "OpenChart Development" : "OpenChart",
   );
   const page = await application.firstWindow();
+  await application.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]!;
+    window.webContents.on("render-process-gone", (_event, details) => {
+      console.error("Smoke renderer terminated", JSON.stringify(details));
+    });
+    window.webContents.on(
+      "did-fail-load",
+      (_event, code, description, _url, isMainFrame) => {
+        if (isMainFrame)
+          console.error("Smoke renderer load failed", code, description);
+      },
+    );
+  });
   page.setDefaultTimeout(15_000);
   assert.equal(
     await application.evaluate(({ app }) => app.getPath("userData")),
@@ -632,6 +652,55 @@ async function launch(): Promise<Page> {
   );
   assert((await readFile(join(home, "openchart.sqlite3"))).byteLength > 0);
   assert((await readFile(join(home, "credential.key"))).byteLength > 0);
+  if (runtime.platform === "win32") {
+    // Read only this smoke's isolated key inside the packaged main process.
+    // Windows async safeStorage uses DPAPI; keep the key and its plaintext out
+    // of test output and compare a private fingerprint across the existing restart.
+    const protection = await application.evaluate(
+      async ({ safeStorage }, file) => {
+        const { readFile } = process.getBuiltinModule("node:fs/promises");
+        const { createHash } = process.getBuiltinModule("node:crypto");
+        const available = await safeStorage.isAsyncEncryptionAvailable();
+        const stored = await readFile(file);
+        const { result } = await safeStorage.decryptStringAsync(stored);
+        const key = Buffer.from(result, "base64");
+        return {
+          available,
+          keyBytes: key.byteLength,
+          excludesPlaintext:
+            !stored.includes(key) && !stored.includes(Buffer.from(result)),
+          fingerprint: createHash("sha256").update(key).digest("hex"),
+        };
+      },
+      join(home, "credential.key"),
+    );
+    assert.equal(
+      protection.available,
+      true,
+      "Windows OS encryption is unavailable",
+    );
+    assert.equal(
+      protection.keyBytes,
+      32,
+      "Protected credential key has the wrong length",
+    );
+    assert.equal(
+      protection.excludesPlaintext,
+      true,
+      "Credential key was stored as plaintext",
+    );
+    const restarted = credentialProtection.keyFingerprint !== undefined;
+    if (restarted)
+      assert(
+        protection.fingerprint === credentialProtection.keyFingerprint,
+        "Restart changed the credential encryption key",
+      );
+    else credentialProtection.keyFingerprint = protection.fingerprint;
+    credentialProtection.windows = {
+      encryptedWithSafeStorage: true,
+      keyRestoredOnRestart: restarted,
+    };
+  }
   await assert.rejects(readFile(join(userData, "openchart.sqlite3")), {
     code: "ENOENT",
   });
@@ -680,6 +749,115 @@ async function verifyMacHeader(page: Page, route: "chat" | "settings") {
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await expect(collapse).toBeVisible();
   return { expandedControlX: expanded.x, collapsedControlX: collapsed.x };
+}
+
+async function verifyWindowsHeader(page: Page) {
+  if (runtime.platform !== "win32") return;
+  const header = page.locator("[data-window-header]");
+  const controls = page.locator("[data-window-header-controls]");
+  await expect(header).toBeVisible();
+  await expect(header).toHaveCSS("app-region", "drag");
+  const bounds = await header.boundingBox();
+  assert(
+    bounds && Math.abs(bounds.y) <= 1 && Math.round(bounds.height) === 44,
+    `Unexpected Windows header bounds: ${JSON.stringify(bounds)}`,
+  );
+  const safeArea = await controls.boundingBox();
+  assert(safeArea && safeArea.x + safeArea.width <= bounds.width - 100);
+  assert.equal(
+    await application!.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.isMenuBarVisible(),
+    ),
+    false,
+  );
+  const sidebar = page.locator('[data-side="left"][data-state]');
+  const sidebarSurface = sidebar.locator('[data-sidebar="sidebar"]');
+  await expect
+    .poll(() =>
+      sidebarSurface.evaluate((element) =>
+        Math.round(element.parentElement!.getBoundingClientRect().y),
+      ),
+    )
+    .toBe(44);
+  const toggle = header.getByRole("button", { name: "Toggle Sidebar" });
+  await expect(toggle).toHaveCSS("app-region", "no-drag");
+  await toggle.click();
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await toggle.click();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  for (const label of ["File", "Edit", "View", "Help"])
+    await expect(
+      header.getByRole("menuitem", { name: label, exact: true }),
+    ).toHaveCSS("app-region", "no-drag");
+  await application!.evaluate(({ Menu }) => {
+    Reflect.set(globalThis, "smokeMenuOpened", false);
+    Menu.getApplicationMenu()!
+      .getMenuItemById("edit")!
+      .submenu!.once("menu-will-show", () => {
+        Reflect.set(globalThis, "smokeMenuOpened", true);
+      });
+  });
+  await header.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  await expect
+    .poll(() =>
+      application!.evaluate(() => Reflect.get(globalThis, "smokeMenuOpened")),
+    )
+    .toBe(true);
+  await application!.evaluate(({ Menu, BrowserWindow }) => {
+    Menu.getApplicationMenu()!
+      .getMenuItemById("edit")!
+      .submenu!.closePopup(BrowserWindow.getAllWindows()[0]!);
+    Reflect.deleteProperty(globalThis, "smokeMenuOpened");
+  });
+  await expect(
+    header.getByRole("menuitem", { name: "Edit", exact: true }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await application!.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0]!;
+    const apply = window.setTitleBarOverlay.bind(window);
+    window.setTitleBarOverlay = (options) => {
+      Reflect.set(globalThis, "smokeWindowControls", options);
+      apply(options);
+    };
+    window.maximize();
+  });
+  await expect(header).toBeVisible();
+  await expect
+    .poll(async () => Math.round((await header.boundingBox())?.height ?? -1))
+    .toBe(44);
+  await application!.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]!.unmaximize();
+  });
+  return {
+    height: bounds.height,
+    menuBarHidden: true,
+    nativePopup: true,
+    sidebarOffset: 44,
+  };
+}
+
+async function captureWindowsFrame(name: string) {
+  if (runtime.platform !== "win32") return;
+  const png = await application!.evaluate(
+    async ({ BrowserWindow, desktopCapturer }) => {
+      const window = BrowserWindow.getAllWindows()[0]!;
+      const bounds = window.getBounds();
+      const sources = await desktopCapturer.getSources({
+        types: ["window"],
+        thumbnailSize: { width: bounds.width, height: bounds.height },
+      });
+      const source = sources.find(
+        (item) => item.id === window.getMediaSourceId(),
+      );
+      if (!source || source.thumbnail.isEmpty())
+        throw new Error("Packaged Windows window capture is unavailable");
+      return source.thumbnail.toPNG().toString("base64");
+    },
+  );
+  await writeFile(
+    join(artifacts, `desktop-windows-${name}.png`),
+    Buffer.from(png, "base64"),
+  );
 }
 
 try {
@@ -771,6 +949,8 @@ try {
   if (runtime.platform === "darwin")
     assert.deepEqual(windowButtons, { x: 20, y: 23 });
   const chatHeader = await verifyMacHeader(page, "chat");
+  const windowsHeader = await verifyWindowsHeader(page);
+  await captureWindowsFrame("light");
 
   const transports = await page.evaluate(async () => {
     const { origin, token } = await (
@@ -838,12 +1018,41 @@ try {
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
+  if (runtime.platform === "win32") {
+    const header = page.locator("[data-window-header]");
+    await expect(header.getByRole("button", { name: "Go back" })).toBeEnabled();
+    await header.getByRole("button", { name: "Go back" }).click();
+    await expect(
+      page.getByRole("textbox", { name: "Message", exact: true }),
+    ).toBeVisible();
+    await expect(
+      header.getByRole("button", { name: "Go forward" }),
+    ).toBeEnabled();
+    await header.getByRole("button", { name: "Go forward" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Appearance" }),
+    ).toBeVisible();
+  }
   const settingsHeader = await verifyMacHeader(page, "settings");
   await page.getByRole("button", { name: "Theme", exact: true }).click();
   await page.getByRole("menuitem", { name: "Dark", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Theme", exact: true }),
   ).toHaveText("Dark");
+  if (runtime.platform === "win32") {
+    await expect
+      .poll(() =>
+        application!.evaluate(() =>
+          Reflect.get(globalThis, "smokeWindowControls"),
+        ),
+      )
+      .toMatchObject({
+        height: 44,
+        color: expect.stringMatching(/^#[\da-f]{6}$/i),
+        symbolColor: expect.stringMatching(/^#[\da-f]{6}$/i),
+      });
+    await captureWindowsFrame("dark");
+  }
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Theme", exact: true }),
@@ -938,15 +1147,18 @@ try {
   ).toBeVisible();
   assert.deepEqual(errors, []);
 
+  if (runtime.platform === "win32")
+    assert.equal(credentialProtection.windows?.keyRestoredOnRestart, true);
   const result = {
     executable: sourceExecutable,
     runtimeTarget,
     buildHost,
-    keychain,
+    keychain: runtime.platform === "darwin" ? keychain : "system",
     relocatedBundle: bundle,
     packagedConpty,
+    windowsCredentialProtection: credentialProtection.windows,
     onboarding,
-    titlebar: { windowButtons, chatHeader, settingsHeader },
+    titlebar: { windowButtons, chatHeader, settingsHeader, windowsHeader },
     isolation,
     boundary,
     session,

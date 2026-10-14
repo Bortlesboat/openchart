@@ -122,10 +122,11 @@ test("runs a standalone workflow at a unicode/space path without creating suppor
     path: filename,
     hash: expect.stringMatching(/^[a-f0-9]{64}$/),
   });
-  expect((await readdir(workspace.root, { recursive: true })).sort()).toEqual([
-    "€ research",
-    filename,
-  ]);
+  expect(
+    (await readdir(workspace.root, { recursive: true }))
+      .map((filename) => filename.split(path.sep).join("/"))
+      .sort(),
+  ).toEqual(["€ research", filename]);
   expect(await readFile(path.join(workspace.root, filename), "utf8")).toBe(
     source,
   );

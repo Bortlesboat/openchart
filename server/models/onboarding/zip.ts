@@ -1,5 +1,5 @@
 // Purpose: Validates and streams bounded ZIP provider archives into an unpublished payload.
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, read } from "node:fs";
 import { mkdir, open as openFile } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
@@ -147,10 +147,20 @@ async function openArchive(archive: string) {
   // the actual file and observes its Promise even after an earlier ZIP error.
   const reader = new (class extends RandomAccessReader {
     override _readStreamForRange(start: number, end: number) {
-      const stream = file.createReadStream({
+      // Ranges borrow the owner's descriptor. Destroying a FileHandle-backed
+      // stream closes that handle even with autoClose:false, preventing the
+      // next ZIP entry from being read. Only closeFile closes the shared file.
+      const stream = createReadStream(archive, {
+        fd: file.fd,
         start,
         end: end - 1,
-        autoClose: false,
+        fs: {
+          read,
+          close: (
+            _descriptor: number,
+            callback: (error: NodeJS.ErrnoException | null) => void,
+          ) => callback(null),
+        },
       });
       streams.add(stream);
       streamClosures.push(
@@ -161,9 +171,6 @@ async function openArchive(archive: string) {
           });
         }),
       );
-      // autoClose:false keeps the shared fd open, but the stream's FileHandle
-      // reference must still be released when its range ends.
-      stream.once("end", () => stream.destroy());
       return stream;
     }
     override read(

@@ -10,12 +10,27 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import type { ReadStream } from "node:fs";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { extractZip } from "./zip";
 import { zipFixture } from "./zip.test-utils";
 
-const io = vi.hoisted(() => ({ opened: vi.fn<(file: FileHandle) => void>() }));
+const io = vi.hoisted(() => ({
+  opened: vi.fn<(file: FileHandle) => void>(),
+  range: vi.fn<(stream: ReadStream) => void>(),
+}));
+vi.mock("node:fs", async (original) => {
+  const fs = await original<typeof import("node:fs")>();
+  return {
+    ...fs,
+    createReadStream: (...args: Parameters<typeof fs.createReadStream>) => {
+      const stream = fs.createReadStream(...args);
+      io.range(stream);
+      return stream;
+    },
+  };
+});
 vi.mock("node:fs/promises", async (original) => {
   const fs = await original<typeof import("node:fs/promises")>();
   return {
@@ -32,6 +47,7 @@ const directories: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   io.opened.mockReset();
+  io.range.mockReset();
   await Promise.all(
     directories
       .splice(0)
@@ -97,16 +113,13 @@ test("cancellation during payload reading destroys the stream before closing the
   const controller = new AbortController();
   let streamClosed = false;
   let fileClosed = false;
-  io.opened.mockImplementation((file) => {
-    const read = file.createReadStream.bind(file);
-    vi.spyOn(file, "createReadStream").mockImplementation((options) => {
-      const stream = read(options);
-      stream.once("data", () => controller.abort());
-      stream.once("close", () => {
-        streamClosed = true;
-      });
-      return stream;
+  io.range.mockImplementation((stream) => {
+    stream.once("data", () => controller.abort());
+    stream.once("close", () => {
+      streamClosed = true;
     });
+  });
+  io.opened.mockImplementation((file) => {
     const close = file.close.bind(file);
     vi.spyOn(file, "close").mockImplementation(async () => {
       expect(streamClosed).toBe(true);
@@ -154,18 +167,45 @@ test("streams a multi-chunk payload and releases every range before returning", 
   const body = randomBytes(128 * 1024).toString("base64");
   const f = await fixture([{ name: "file", body }]);
   const streams: import("node:fs").ReadStream[] = [];
-  io.opened.mockImplementation((file) => {
-    const read = file.createReadStream.bind(file);
-    vi.spyOn(file, "createReadStream").mockImplementation((options) => {
-      const stream = read(options);
-      streams.push(stream);
-      return stream;
-    });
-  });
+  io.range.mockImplementation((stream) => streams.push(stream));
   await extractZip(f.archive, f.payload, "flat", new AbortController().signal);
   expect(await readFile(path.join(f.payload, "file"), "utf8")).toBe(body);
   expect(streams.length).toBeGreaterThan(0);
   expect(streams.every((stream) => stream.closed)).toBe(true);
+});
+
+test("keeps the shared archive open through every entry and closes it after all ranges", async () => {
+  const entries = [
+    { name: "uv.exe", body: randomBytes(128 * 1024).toString("base64") },
+    { name: "uvw.exe", body: "second executable" },
+    { name: "uvx.exe", body: "third executable" },
+  ];
+  const f = await fixture(entries);
+  const streams: ReadStream[] = [];
+  let archive: FileHandle | undefined;
+  let closures = 0;
+  io.opened.mockImplementation((file) => {
+    archive = file;
+    const close = file.close.bind(file);
+    vi.spyOn(file, "close").mockImplementation(async () => {
+      expect(streams).toHaveLength(entries.length);
+      expect(streams.every((stream) => stream.closed)).toBe(true);
+      closures++;
+      await close();
+    });
+  });
+  io.range.mockImplementation((stream) => {
+    expect(archive?.fd).toBeGreaterThanOrEqual(0);
+    streams.push(stream);
+  });
+  await extractZip(f.archive, f.payload, "flat", new AbortController().signal);
+  for (const entry of entries)
+    expect(await readFile(path.join(f.payload, entry.name), "utf8")).toBe(
+      entry.body,
+    );
+  expect(closures).toBe(1);
+  expect(archive?.fd).toBe(-1);
+  await rm(f.archive);
 });
 
 test("extracts a stored empty file without requesting an invalid byte range", async () => {

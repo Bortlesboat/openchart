@@ -123,7 +123,9 @@ export default defineConfig(
           tailwindcss: {
             config: path.join(app, "tailwind.config.cjs"),
             callees: ["cn", "classnames", "clsx", "ctl", "cva", "tv"],
-            cssFiles: [path.join(app, "src/**/*.css")],
+            cssFiles: [
+              path.join(app, "src/**/*.css").replaceAll(path.sep, "/"),
+            ],
           },
         },
         rules: {
