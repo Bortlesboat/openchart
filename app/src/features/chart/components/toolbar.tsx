@@ -66,6 +66,7 @@ import {
 } from "@openchart/app/lib/chart/preferences";
 
 import { ResourceNotice } from "./resource-notice";
+import { SessionClock } from "./session-clock";
 import { SymbolPicker } from "./symbol-picker";
 import { IndicatorLibraryNavigation } from "@openchart/app/lib/indicator-library/indicator-library";
 import { WorkspaceFileNavigation } from "@openchart/app/lib/workspace/workspace";
@@ -613,6 +614,11 @@ function ChartControls({
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <SessionClock
+        provider={source.provider}
+        listing={source.listing}
+        session={cell.session}
+      />
     </div>
   );
 }
