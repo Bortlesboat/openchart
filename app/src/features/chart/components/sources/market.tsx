@@ -88,7 +88,8 @@ function useSessionDays(series: BarsSeries, frame: DataFrame | undefined) {
 }
 
 /** Fill price-tag session badges from the calendar. Failures leave them unset.
- * The phase changes at the next boundary; paint reads that close or open time.
+ * The phase changes at the next boundary; paint reads that close or open time,
+ * so a live countdown repaints once per displayed second.
  * @example usePriceSession(chart, series, ["price"]);
  */
 function usePriceSession(
@@ -126,6 +127,22 @@ function usePriceSession(
       return;
     }
     let timer = 0;
+    let boundary = 0;
+    let target: number | undefined;
+    const schedule = () => {
+      const now = Date.now();
+      const second =
+        target === undefined ? Infinity : (target - now) % 1000 || 1000;
+      timer = window.setTimeout(
+        tick,
+        Math.max(0, Math.min(boundary - now, second)) + 25,
+      );
+    };
+    const tick = () => {
+      if (Date.now() >= boundary) return apply();
+      chart.renderer.render("light");
+      schedule();
+    };
     const apply = () => {
       const now = Date.now();
       const utcDay = Math.floor(now / 86_400_000);
@@ -141,11 +158,11 @@ function usePriceSession(
           else delete state.session?.[id];
         }
       }, "light");
-      const wait =
-        status.kind === "empty" || status.remainingMs === undefined
-          ? 86_400_000 - (now % 86_400_000)
-          : status.remainingMs;
-      timer = window.setTimeout(apply, Math.max(250, wait + 25));
+      const remaining =
+        status.kind === "empty" ? undefined : status.remainingMs;
+      target = remaining === undefined ? undefined : now + remaining;
+      boundary = Math.min((utcDay + 1) * 86_400_000, target ?? Infinity);
+      schedule();
     };
     apply();
     return () => {

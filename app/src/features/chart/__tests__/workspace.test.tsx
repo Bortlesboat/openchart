@@ -193,7 +193,12 @@ function MarketScene({
   );
 }
 
-function setup(initialViewport?: { from: number; to: number }) {
+function setup(
+  initialViewport?: { from: number; to: number },
+  getCalendar: FeedClient["calendar"]["getCalendar"] = vi
+    .fn()
+    .mockResolvedValue({ calendar: "test", timezone: "UTC", days: [] }),
+) {
   const calls: Array<{
     request: BarsRequest;
     sink: Subscriber<BarsMessage>;
@@ -212,13 +217,7 @@ function setup(initialViewport?: { from: number; to: number }) {
         ),
       getCapabilities: vi.fn(),
     },
-    calendar: {
-      getCalendar: vi.fn().mockResolvedValue({
-        calendar: "test",
-        timezone: "UTC",
-        days: [],
-      }),
-    },
+    calendar: { getCalendar },
     series: { select: vi.fn() },
     symbology: {
       index: vi.fn(),
@@ -1203,4 +1202,40 @@ it("keeps market execution and chart updates alive when legend surfaces are remo
   expect(channel.stop).not.toHaveBeenCalled();
   fixture.view.unmount();
   expect(channel.stop).toHaveBeenCalledOnce();
+});
+
+it("repaints the session countdown each second and drops it when the next day's calendar fails", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(Date.parse("2026-11-27T23:59:57Z"));
+  const regular = {
+    type: "regular" as const,
+    start: Date.parse("2026-11-27T14:30:00Z"),
+    end: Date.parse("2026-11-28T01:00:00Z"),
+  };
+  const getCalendar = vi
+    .fn()
+    .mockResolvedValueOnce({
+      calendar: "test",
+      timezone: "UTC",
+      days: [{ date: Date.parse("2026-11-27T00:00:00Z"), sessions: [regular] }],
+    })
+    .mockRejectedValue(new Error("calendar unavailable"));
+  const fixture = setup(undefined, getCalendar);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const session = () => fixture.runtime.store.getState().session?.csr_price;
+  expect(session()).toEqual({
+    phase: "open",
+    currentSessionOpenAt: regular.start / 1000,
+    nextCloseAt: regular.end / 1000,
+  });
+  const render = vi.mocked(fixture.runtime.renderer.render);
+  const before = render.mock.calls.length;
+  await act(() => vi.advanceTimersByTimeAsync(2050));
+  expect(render.mock.calls.length - before).toBe(2);
+  expect(getCalendar).toHaveBeenCalledOnce();
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(getCalendar).toHaveBeenCalledTimes(2);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(session()).toBeUndefined();
+  fixture.view.unmount();
 });
