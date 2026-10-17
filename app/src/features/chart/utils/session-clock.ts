@@ -1,21 +1,16 @@
-// Purpose: Derive open/closed session status and compact countdowns from venue days.
-import type {
-  AtomicSessionType,
-  SessionType,
-  TradingDay,
-  TradingSession,
+// Purpose: Derive a chart session badge from venue days and the coverage selector.
+import type { Chart } from "@openchart/chart-core/v2";
+import {
+  coveredSessionTypes,
+  type SessionType,
+  type TradingDay,
+  type TradingSession,
 } from "@openchart/market";
 
 const DAY_MS = 86_400_000;
 
-const coveredTypes: Record<SessionType, readonly AtomicSessionType[]> = {
-  regular: ["regular"],
-  extended: ["pre", "regular", "post"],
-  "24h": ["pre", "regular", "post", "overnight"],
-};
-
 /** Open, closed until the next covered session, or no sessions in the calendar. */
-export type SessionClockStatus =
+type SessionClockStatus =
   | {
       readonly kind: "open";
       readonly session: TradingSession;
@@ -43,7 +38,6 @@ export function sessionClockWindow(now: number): {
 
 /**
  * Covered sessions at `now` for the chart's session selector.
- * Regular excludes pre/post; extended excludes overnight; 24h uses every atomic type.
  * @example sessionClockStatus({ days, now: Date.now(), coverage: "regular" });
  */
 export function sessionClockStatus({
@@ -55,7 +49,7 @@ export function sessionClockStatus({
   readonly now: number;
   readonly coverage: SessionType;
 }): SessionClockStatus {
-  const allowed = new Set(coveredTypes[coverage]);
+  const allowed = new Set(coveredSessionTypes(coverage));
   const sessions = days
     .flatMap((day) => day.sessions)
     .filter((session) => allowed.has(session.type))
@@ -80,57 +74,23 @@ export function sessionClockStatus({
 }
 
 /**
- * Compact remaining time: days and hours, hours and minutes, minutes, or seconds.
- * @example formatCountdown(90 * 60 * 1000);
+ * Badge fields for the core price-tag countdown. An empty calendar draws none.
+ * An open session counts to its close; a closed one counts to the next open.
+ * @example sessionInfo(sessionClockStatus({ days, now, coverage: "regular" }));
  */
-export function formatCountdown(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const days = Math.floor(totalSeconds / 86_400);
-  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  if (minutes > 0) return `${minutes}m`;
-  return `${totalSeconds}s`;
-}
-
-/**
- * Short name for an atomic session on the clock.
- * @example sessionTypeLabel("post");
- */
-export function sessionTypeLabel(type: AtomicSessionType): string {
-  if (type === "regular") return "Regular";
-  if (type === "pre") return "Pre-market";
-  if (type === "post") return "After hours";
-  return "Overnight";
-}
-
-/**
- * Toolbar copy for a resolved status, or undefined when the calendar is empty.
- * @example sessionClockLabel({ kind: "closed", next, remainingMs: 60_000 });
- */
-export function sessionClockLabel(
+export function sessionInfo(
   status: SessionClockStatus,
-): string | undefined {
+): Chart.SessionInfo | undefined {
   if (status.kind === "empty") return undefined;
   if (status.kind === "open") {
-    return `${sessionTypeLabel(status.session.type)} · ${formatCountdown(status.remainingMs)}`;
+    const type = status.session.type;
+    return {
+      phase: type === "pre" || type === "post" ? type : "open",
+      currentSessionOpenAt: status.session.start / 1000,
+      nextCloseAt: status.session.end / 1000,
+    };
   }
-  if (status.remainingMs === undefined) return "Closed";
-  return `Closed · ${formatCountdown(status.remainingMs)}`;
-}
-
-/**
- * Screen-reader phrasing that does not tick as a live region.
- * @example sessionClockDescription(status);
- */
-export function sessionClockDescription(
-  status: SessionClockStatus,
-): string | undefined {
-  if (status.kind === "empty") return undefined;
-  if (status.kind === "open") {
-    return `${sessionTypeLabel(status.session.type)} session open, closes in ${formatCountdown(status.remainingMs)}`;
-  }
-  if (status.remainingMs === undefined || !status.next) return "Market closed";
-  return `Market closed, ${sessionTypeLabel(status.next.type)} opens in ${formatCountdown(status.remainingMs)}`;
+  return status.next
+    ? { phase: "closed", nextOpenAt: status.next.start / 1000 }
+    : { phase: "closed" };
 }
