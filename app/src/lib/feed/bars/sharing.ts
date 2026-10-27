@@ -2,7 +2,7 @@
 import type { BarsRequest } from "@openchart/feed";
 import { MutableHashMap, Option } from "effect";
 import { Observable, ReplaySubject, finalize, of, share, timer } from "rxjs";
-import type { BarsView } from "../contracts";
+import { barsRequestCovers, type BarsView } from "../contracts";
 
 /** How long an unwatched live view stays open for reuse; matches React Query's default gcTime. */
 export const BARS_KEEP_MS = 5 * 60_000;
@@ -25,14 +25,13 @@ export function shareBarsViews(
 ): (request: BarsRequest) => Observable<BarsView> {
   const newest = MutableHashMap.empty<string, SharedView>();
   return (request) => {
-    const { from, countBack, ...seriesAndEnd } = request;
-    const key = JSON.stringify(seriesAndEnd);
+    const key = JSON.stringify({
+      ...request,
+      from: undefined,
+      countBack: undefined,
+    });
     const found = MutableHashMap.get(newest, key);
-    if (
-      Option.isSome(found) &&
-      found.value.request.from <= from &&
-      found.value.request.countBack >= countBack
-    )
+    if (Option.isSome(found) && barsRequestCovers(found.value.request, request))
       return found.value.view$;
 
     const isNewest = () =>

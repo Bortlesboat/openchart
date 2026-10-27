@@ -1,11 +1,15 @@
 // Purpose: Chart windows cover the saved zoom; session shading reads only the calendar it needs.
 import { BarsSeries, resolutionMs } from "@openchart/feed";
+import { v2 } from "@openchart/chart-core";
 import { Schema } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   initialBarsRequest,
+  applyTimeViewport,
+  readTimeViewport,
   sessionDaysWindow,
   tagSessions,
+  viewportNeedsReload,
 } from "@openchart/app/lib/chart/data";
 
 const series = Schema.decodeUnknownSync(BarsSeries)({
@@ -20,6 +24,46 @@ const series = Schema.decodeUnknownSync(BarsSeries)({
   resolution: "1d",
   session: "24h",
   adjustment: "raw",
+});
+
+it("round-trips fractional viewport bounds across trading gaps using the whole axis length", () => {
+  const day = resolutionMs["1d"];
+  const times = Array.from(
+    { length: 1005 },
+    (_, index) =>
+      Date.UTC(2020, 0, 6) + (index + Math.floor(index / 5) * 2) * day,
+  );
+  const state = v2.createState({ id: "fractional-viewport" });
+  v2.ChartStateUtils.resize(state, 600, 400);
+  const main = v2.ChartStateUtils.addSeries(state, {
+    id: "main",
+    type: "Line",
+    data: times.slice(0, 1000).map((time) => ({ time: time / 1000, value: 1 })),
+  });
+  v2.ChartStateModel.getSeriesObject(state, main)!.role = "main";
+  v2.ChartStateUtils.addSeries(state, {
+    id: "longer",
+    type: "Line",
+    data: times.map((time) => ({ time: time / 1000, value: 2 })),
+  });
+  v2.ChartStateUtils.setVisibleRange(state, 800.25, 879.75);
+  expect(readTimeViewport(state, day)).toEqual({
+    from: times[800]! + 0.25 * (times[801]! - times[800]!),
+    to: times[879]! + 0.75 * (times[880]! - times[879]!),
+  });
+  v2.ChartStateUtils.setVisibleRange(state, 800.02, 879.02);
+  const changed = {
+    from: times[800]! + 0.04 * (times[801]! - times[800]!),
+    to: times[879]! + 0.04 * (times[880]! - times[879]!),
+  };
+  applyTimeViewport(state, changed, day);
+  expect(readTimeViewport(state, day)).toEqual(changed);
+});
+
+it("has no current time viewport without a main timeline", () => {
+  expect(
+    readTimeViewport(v2.createState({ id: "empty-viewport" }), 60_000),
+  ).toBeUndefined();
 });
 
 afterEach(() => {
@@ -126,4 +170,19 @@ it("asks for calendar days only under intraday Extended/24h bars", () => {
       undefined,
     ),
   ).toBeUndefined();
+});
+
+it("reloads only when a jump sits more than one screen outside the current bars window", () => {
+  expect(
+    viewportNeedsReload({ from: 100, to: "now" }, { from: 0, to: 10 }),
+  ).toBe(true);
+  expect(
+    viewportNeedsReload({ from: 100, to: 200 }, { from: 90, to: 150 }),
+  ).toBe(false);
+  expect(
+    viewportNeedsReload({ from: 128, to: "now" }, { from: 0, to: 100 }),
+  ).toBe(false);
+  expect(
+    viewportNeedsReload({ from: 0, to: "now" }, { from: 10, to: 20 }),
+  ).toBe(false);
 });
